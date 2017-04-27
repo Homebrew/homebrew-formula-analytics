@@ -57,19 +57,33 @@ else
 end
 json_output = ARGV.include?("--json")
 
-dimension_filters = [
-  DimensionFilter.new(
-    dimension_name: "ga:eventCategory",
-    expressions: [category],
-    operator: "EXACT",
+dimension_filter_clauses = [
+  DimensionFilterClause.new(
+    filters: [
+      DimensionFilter.new(
+        dimension_name: "ga:eventCategory",
+        expressions: [category],
+        operator: "EXACT",
+      ),
+    ],
   ),
 ]
 
 if formula
-  dimension_filters << DimensionFilter.new(
-    dimension_name: "ga:eventAction",
-    expressions: [formula],
-    operator: "BEGINS_WITH",
+  dimension_filter_clauses << DimensionFilterClause.new(
+    operator: "OR",
+    filters: [
+      DimensionFilter.new(
+        dimension_name: "ga:eventAction",
+        expressions: [formula],
+        operator: "EXACT",
+      ),
+      DimensionFilter.new(
+        dimension_name: "ga:eventAction",
+        expressions: ["#{formula} "],
+        operator: "BEGINS_WITH",
+      ),
+    ],
   )
 end
 
@@ -79,8 +93,6 @@ order_by = OrderBy.new field_name: "ga:totalEvents",
                        sort_order: "DESCENDING"
 date_range = DateRange.new start_date: "#{days_ago}daysAgo",
                            end_date: "today"
-dimension_filter_clause = DimensionFilterClause.new filters: dimension_filters,
-                                                    operator: "AND"
 
 report_request = ReportRequest.new(
   view_id: ANALYTICS_VIEW_ID,
@@ -88,7 +100,7 @@ report_request = ReportRequest.new(
   metrics: [metric],
   order_bys: [order_by],
   date_ranges: [date_range],
-  dimension_filter_clauses: [dimension_filter_clause],
+  dimension_filter_clauses: dimension_filter_clauses,
 )
 
 analytics_reporting_service = AnalyticsReportingService.new
@@ -100,36 +112,64 @@ response = analytics_reporting_service.batch_get_reports(get_reports_request)
 row_count = response.reports.first.data.row_count.to_i
 odie "No data found!" if row_count.zero?
 
+total_count = response.reports.first.data.totals.first.values.first.to_i
+
 json = {
   category: category,
   total_items: row_count,
   start_date: Date.today - days_ago.to_i,
   end_date: Date.today,
+  total_count: total_count,
   items: [],
 }
 json[:formula] = formula if formula
 
-total = response.reports.first.data.totals.first.values.first.to_i
+def format_count(count)
+  count.to_s.reverse.gsub(/(\d{3})(?=\d)/, '\\1,').reverse
+end
+
+def format_percent(percent)
+  format "%.2f", percent
+end
+
 response.reports.first.data.rows.each_with_index do |row, index|
-  formula = row.dimensions.first
   count = row.metrics.first.values.first
-  percent = (count.to_f / total.to_f) * 100
+  percent = (count.to_f / total_count.to_f) * 100
+
   json[:items] << {
     number: index + 1,
     formula: row.dimensions.first,
-    count: row.metrics.first.values.first,
-    percent: "#{"%.2f" % percent}",
+    count: format_count(count),
+    percent: format_percent(percent),
   }
 end
+
+total_count = format_count(total_count)
+total_percent = "100"
+
+number_width = row_count.to_s.length
+count_width = total_count.length
+percent_width = format_percent("100").length
+formula_width = Tty.width - number_width - count_width - percent_width - 10
 
 if json_output
   puts JSON.pretty_generate json
 else
-  title = category.to_s
-  title = "#{formula} #{title}" if formula
+  title = "#{category} events in the last #{days_ago} days"
+  title += " for #{formula}" if formula
   puts title
-  puts "=" * title.length
-  json[:items].each do |item|
-    puts "##{item[:number]}: #{item[:formula]}: #{item[:count]} (#{item[:percent]}%)"
+  puts "=" * Tty.width
+  (json[:items]).each do |item|
+    number = format "%#{number_width}s", item[:number]
+    formula = format "%-#{formula_width}s", item[:formula][0..formula_width-1]
+    count = format "%#{count_width}s", item[:count]
+    percent = format "%#{percent_width}s", item[:percent]
+    puts "#{number} | #{formula} | #{count} | #{percent}%"
   end
+  puts "=" * Tty.width
+  total = format "%-#{formula_width + number_width + 3}s", "Total"
+  total_count = format "%#{count_width}s", total_count
+  total_percent = format "%#{percent_width}s", total_percent
+  puts "#{total} | #{total_count} | #{total_percent}%"
+  puts "=" * Tty.width
 end
