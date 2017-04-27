@@ -19,6 +19,8 @@ before_install:
   - ln -s "$PWD" "$HOMEBREW_TAP_DIR"
   - export HOMEBREW_DEVELOPER="1"
   - ulimit -n 1024
+  - export PATH="$HOME/.gem/ruby/2.0.0/bin:$PATH"
+  - gem install --user bundler
 
 script:
   - brew formula-analytics --help

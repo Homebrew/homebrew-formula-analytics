@@ -1,5 +1,5 @@
 # Homebrew Formula Analytics
-Provides `brew formula-analytics` for Homebrew maintainers to be able to query Homebrew's analytics from the command-line.
+Provides `brew formula-analytics` for Homebrew maintainers to be able to query [Homebrew's analytics](http://docs.brew.sh/Analytics.html) from the command-line.
 
 This is restricted to maintainers only because it's not clear how to provide anonymous, read-only access to Google Analytics.
 

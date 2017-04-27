@@ -1,4 +1,4 @@
-#:  * `formula-analytics` [`--days-ago=`<days>] [`--build-error`|`--install-on-request`|`--install`] [<formula>]:
+#:  * `formula-analytics` [`--days-ago=`<days>] [`--build-error`|`--install-on-request`|`--install`] [`--json`] [<formula>]:
 #:    Query Homebrew's anaytics for formula information
 #:
 #:    If `--days-ago=<days>` is passed, the query is from the specified days ago until the present. The default is 30 days.
@@ -8,6 +8,8 @@
 #:    If `--install-on-request` is passed, the number of specifically requested installations of the formula are shown.
 #:
 #:    If `--install` is passed, the number of specifically requested installations or installation as dependencies of the formula are shown. This is the default.
+#:
+#:    If `--json` is passed, the output is in JSON rather than plain text.
 #:
 #:    If `<formula>` is passed, the results will be filtered to this formula. If this is not passed, the top 1000 formulae will be shown.
 #:
@@ -53,6 +55,7 @@ elsif ARGV.include?("--install-on-request")
 else
   :install
 end
+json_output = ARGV.include?("--json")
 
 dimension_filters = [
   DimensionFilter.new(
@@ -94,18 +97,39 @@ get_reports_request = GetReportsRequest.new
 get_reports_request.report_requests = [report_request]
 response = analytics_reporting_service.batch_get_reports(get_reports_request)
 
-row_count = response.reports.first.data.row_count
+row_count = response.reports.first.data.row_count.to_i
 odie "No data found!" if row_count.zero?
 
-title = category.to_s
-title = "#{formula} #{title}" if formula
-puts title
-puts "=" * title.length
+json = {
+  category: category,
+  total_items: row_count,
+  start_date: Date.today - days_ago.to_i,
+  end_date: Date.today,
+  items: [],
+}
+json[:formula] = formula if formula
 
 total = response.reports.first.data.totals.first.values.first.to_i
 response.reports.first.data.rows.each_with_index do |row, index|
   formula = row.dimensions.first
   count = row.metrics.first.values.first
   percent = (count.to_f / total.to_f) * 100
-  puts "##{index+1}: #{formula}: #{count} (#{"%.2f" % percent}%)"
+  json[:items] << {
+    number: index + 1,
+    formula: row.dimensions.first,
+    count: row.metrics.first.values.first,
+    percent: "#{"%.2f" % percent}",
+  }
+end
+
+if json_output
+  puts JSON.pretty_generate json
+else
+  title = category.to_s
+  title = "#{formula} #{title}" if formula
+  puts title
+  puts "=" * title.length
+  json[:items].each do |item|
+    puts "##{item[:number]}: #{item[:formula]}: #{item[:count]} (#{item[:percent]}%)"
+  end
 end
