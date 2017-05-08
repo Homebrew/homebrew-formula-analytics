@@ -19,8 +19,10 @@ unless File.exist? CREDENTIALS_PATH
   odie "No Google Analytics credentials found at #{CREDENTIALS_PATH}!"
 end
 
+# Configure RubyGems.
 REPO_ROOT = Pathname.new "#{File.dirname(__FILE__)}/.."
-BUNDLER_SETUP = Pathname.new "#{REPO_ROOT}/vendor/ruby/bundler/setup.rb"
+VENDOR_RUBY = "#{REPO_ROOT}/vendor/ruby"
+BUNDLER_SETUP = Pathname.new "#{VENDOR_RUBY}/bundler/setup.rb"
 unless BUNDLER_SETUP.exist?
   Homebrew.install_gem_setup_path! "bundler"
 
@@ -28,8 +30,12 @@ unless BUNDLER_SETUP.exist?
     safe_system "bundle", "install", "--standalone", "--path", "vendor/ruby"
   end
 end
-
+require "rbconfig"
+ENV["GEM_HOME"] = ENV["GEM_PATH"] = "#{VENDOR_RUBY}/#{RUBY_ENGINE}/#{RbConfig::CONFIG["ruby_version"]}"
+Gem.clear_paths
+Gem::Specification.reset
 require_relative BUNDLER_SETUP
+
 require "google/apis/analyticsreporting_v4"
 require "googleauth"
 
