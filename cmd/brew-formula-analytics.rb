@@ -21,7 +21,7 @@ end
 
 # Configure RubyGems.
 REPO_ROOT = Pathname.new "#{File.dirname(__FILE__)}/.."
-VENDOR_RUBY = "#{REPO_ROOT}/vendor/ruby"
+VENDOR_RUBY = "#{REPO_ROOT}/vendor/ruby".freeze
 BUNDLER_SETUP = Pathname.new "#{VENDOR_RUBY}/bundler/setup.rb"
 unless BUNDLER_SETUP.exist?
   Homebrew.install_gem_setup_path! "bundler"
@@ -48,6 +48,8 @@ API_SCOPE = "https://www.googleapis.com/auth/analytics.readonly".freeze
 # Using a service account:
 # https://developers.google.com/api-client-library/ruby/auth/service-accounts
 credentials = ServiceAccountCredentials.make_creds(
+  # Need to pass an open file descriptor here
+  # rubocop:disable Style/AutoResourceCleanup
   json_key_io: File.open(CREDENTIALS_PATH),
   scope: API_SCOPE,
 )
