@@ -78,17 +78,22 @@ dimension_filter_clauses = [
 ]
 
 if formula
+  formula_name = begin
+    Formula[formula].full_name
+  rescue
+    formula
+  end
   dimension_filter_clauses << DimensionFilterClause.new(
     operator: "OR",
     filters: [
       DimensionFilter.new(
         dimension_name: "ga:eventAction",
-        expressions: [formula],
+        expressions: [formula_name],
         operator: "EXACT",
       ),
       DimensionFilter.new(
         dimension_name: "ga:eventAction",
-        expressions: ["#{formula} "],
+        expressions: ["#{formula_name} "],
         operator: "BEGINS_WITH",
       ),
     ],
