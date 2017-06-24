@@ -55,7 +55,15 @@ credentials = ServiceAccountCredentials.make_creds(
 )
 
 formula = ARGV.named.first
-days_ago = ARGV.value("days-ago") || 30
+
+FIRST_ANALYTICS_DATE = Date.parse("21 Apr 2016").freeze
+max_days_ago = (Date.today - FIRST_ANALYTICS_DATE).to_i
+days_ago = (ARGV.value("days-ago") || 30).to_i
+if days_ago > max_days_ago
+  opoo "Analytics started #{FIRST_ANALYTICS_DATE}. `--days-ago` set to maximum value."
+  days_ago = max_days_ago
+end
+
 category = if ARGV.include?("--build-error")
   :BuildError
 elsif ARGV.include?("--install-on-request")
