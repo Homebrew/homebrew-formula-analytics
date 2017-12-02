@@ -1,4 +1,4 @@
-#:  * `formula-analytics` [`--days-ago=`<days>] [`--build-error`|`--install-on-request`|`--install`] [`--json`] [<formula>]:
+#:  * `formula-analytics` [`--days-ago=`<days>] [`--build-error`] [`--install-on-request`] [`--install`] [`--os-version`] [`--json`] [<formula>]:
 #:    Query Homebrew's anaytics for formula information
 #:
 #:    If `--days-ago=<days>` is passed, the query is from the specified days ago until the present. The default is 30 days.
@@ -8,6 +8,8 @@
 #:    If `--install-on-request` is passed, the number of specifically requested installations of the formula are shown.
 #:
 #:    If `--install` is passed, the number of specifically requested installations or installation as dependencies of the formula are shown. This is the default.
+#:
+#:    If `--os-version` is passed, output OS versions rather than formulae names.
 #:
 #:    If `--json` is passed, the output is in JSON rather than plain text.
 #:
@@ -64,86 +66,115 @@ if days_ago > max_days_ago
   days_ago = max_days_ago
 end
 
-category = if ARGV.include?("--build-error")
-  :BuildError
-elsif ARGV.include?("--install-on-request")
-  :install_on_request
-else
-  :install
-end
 json_output = ARGV.include?("--json")
+os_version = ARGV.include?("--os-version")
 
-dimension_filter_clauses = [
-  DimensionFilterClause.new(
-    filters: [
-      DimensionFilter.new(
-        dimension_name: "ga:eventCategory",
-        expressions: [category],
-        operator: "EXACT",
-      ),
-    ],
-  ),
-]
+categories = []
+categories << :install if ARGV.include?("--install")
+categories << :install_on_request if ARGV.include?("--install-on-request")
+categories << :BuildError if ARGV.include?("--build-error")
+if categories.empty?
+  if json_output
+    categories += [:install]
+  else
+    categories += [:install, :install_on_request, :BuildError]
+  end
+elsif categories.length > 1
+  odie "Cannot specify multiple categories for JSON output!" if json_output
+end
 
-if formula
-  formula_name = begin
+formula_name = if formula
+  begin
     Formula[formula].full_name
   rescue
     formula
   end
-  dimension_filter_clauses << DimensionFilterClause.new(
-    operator: "OR",
-    filters: [
-      DimensionFilter.new(
-        dimension_name: "ga:eventAction",
-        expressions: [formula_name],
-        operator: "EXACT",
-      ),
-      DimensionFilter.new(
-        dimension_name: "ga:eventAction",
-        expressions: ["#{formula_name} "],
-        operator: "BEGINS_WITH",
-      ),
-    ],
-  )
 end
 
-dimension = Dimension.new name: "ga:eventAction"
-metric = Metric.new expression: "ga:totalEvents"
-order_by = OrderBy.new field_name: "ga:totalEvents",
-                       sort_order: "DESCENDING"
-date_range = DateRange.new start_date: "#{days_ago}daysAgo",
-                           end_date: "today"
+report_requests = []
 
-report_request = ReportRequest.new(
-  view_id: ANALYTICS_VIEW_ID,
-  dimensions: [dimension],
-  metrics: [metric],
-  order_bys: [order_by],
-  date_ranges: [date_range],
-  dimension_filter_clauses: dimension_filter_clauses,
-)
+categories.each do |category|
+  dimension_filter_clauses = [
+    DimensionFilterClause.new(
+      filters: [
+        DimensionFilter.new(
+          dimension_name: "ga:eventCategory",
+          expressions: [category],
+          operator: "EXACT",
+        ),
+      ],
+    ),
+  ]
+
+  if formula_name
+    dimension_filter_clauses << DimensionFilterClause.new(
+      operator: "OR",
+      filters: [
+        DimensionFilter.new(
+          dimension_name: "ga:eventAction",
+          expressions: [formula_name],
+          operator: "EXACT",
+        ),
+        DimensionFilter.new(
+          dimension_name: "ga:eventAction",
+          expressions: ["#{formula_name} "],
+          operator: "BEGINS_WITH",
+        ),
+      ],
+    )
+  end
+
+  dimension = if os_version
+    dimension_filter_clauses << DimensionFilterClause.new(
+      operator: "AND",
+      filters: [
+        DimensionFilter.new(
+          dimension_name: "ga:operatingSystemVersion",
+          not: true,
+          expressions: ["Intel"],
+          operator: "EXACT",
+        ),
+        DimensionFilter.new(
+          dimension_name: "ga:operatingSystemVersion",
+          not: true,
+          expressions: ["Intel 10.90"],
+          operator: "EXACT",
+        ),
+        DimensionFilter.new(
+          dimension_name: "ga:operatingSystemVersion",
+          not: true,
+          expressions: ["(not set)"],
+          operator: "EXACT",
+        ),
+      ],
+    )
+    Dimension.new name: "ga:operatingSystemVersion"
+  else
+    Dimension.new name: "ga:eventAction"
+  end
+  metric = Metric.new expression: "ga:totalEvents"
+  order_by = OrderBy.new field_name: "ga:totalEvents",
+                         sort_order: "DESCENDING"
+  date_range = DateRange.new start_date: "#{days_ago}daysAgo",
+                             end_date: "today"
+
+  report_requests << ReportRequest.new(
+    view_id: ANALYTICS_VIEW_ID,
+    dimensions: [dimension],
+    metrics: [metric],
+    order_bys: [order_by],
+    date_ranges: [date_range],
+    dimension_filter_clauses: dimension_filter_clauses,
+  )
+end
 
 analytics_reporting_service = AnalyticsReportingService.new
 analytics_reporting_service.authorization = credentials
 get_reports_request = GetReportsRequest.new
-get_reports_request.report_requests = [report_request]
+get_reports_request.report_requests = report_requests
 response = analytics_reporting_service.batch_get_reports(get_reports_request)
 
-row_count = response.reports.first.data.row_count.to_i
-odie "No data found!" if row_count.zero?
-
-total_count = response.reports.first.data.totals.first.values.first.to_i
-
-json = {
-  category: category,
-  total_items: row_count,
-  start_date: Date.today - days_ago.to_i,
-  end_date: Date.today,
-  total_count: total_count,
-  items: [],
-}
-json[:formula] = formula if formula
+dimension_key = os_version ? :os_version : :formula
 
 def format_count(count)
   count.to_s.reverse.gsub(/(\d{3})(?=\d)/, '\\1,').reverse
@@ -153,42 +184,92 @@ def format_percent(percent)
   format "%.2f", percent
 end
 
-response.reports.first.data.rows.each_with_index do |row, index|
-  count = row.metrics.first.values.first
-  percent = (count.to_f / total_count.to_f) * 100
-
-  json[:items] << {
-    number: index + 1,
-    formula: row.dimensions.first,
-    count: format_count(count),
-    percent: format_percent(percent),
-  }
+def format_dimension(dimension, key)
+  return dimension if key != :os_version
+  dimension.gsub!(/^Intel ?/, "")
+  case dimension
+  when "10.4" then "Mac OS X Tiger (10.4)"
+  when "10.5" then "Mac OS X Leopard (10.5)"
+  when "10.6" then "Mac OS X Snow Leopard (10.6)"
+  when "10.7" then "Mac OS X Lion (10.7)"
+  when "10.8" then "OS X Mountain Lion (10.8)"
+  when "10.9" then "OS X Mavericks (10.9)"
+  when "10.10" then "OS X Yosemite (10.10)"
+  when "10.11" then "OS X El Capitan (10.11)"
+  when "10.12" then "macOS Sierra (10.12)"
+  when "10.13" then "macOS High Sierra (10.13)"
+  when /10\.\d+/ then "macOS (#{dimension})"
+  when "" then "Unknown"
+  else dimension
+  end
 end
 
-total_count = format_count(total_count)
-total_percent = "100"
+response.reports.each_with_index do |report, index|
+  first_report = index.zero?
+  puts unless first_report
 
-number_width = row_count.to_s.length
-count_width = total_count.length
-percent_width = format_percent("100").length
-formula_width = Tty.width - number_width - count_width - percent_width - 10
+  category = categories.at index
+  row_count = report.data.row_count.to_i
+  if row_count.zero?
+    onoe "No #{category} data found!"
+    next
+  end
 
-if json_output
-  puts JSON.pretty_generate json
-else
-  title = "#{category} events in the last #{days_ago} days"
-  title += " for #{formula}" if formula
+  total_count = report.data.totals.first.values.first.to_i
+
+  json = {
+    category: category,
+    total_items: row_count,
+    start_date: Date.today - days_ago.to_i,
+    end_date: Date.today,
+    total_count: total_count,
+    items: [],
+  }
+  json[:formula] = formula if formula
+
+  report.data.rows.each_with_index do |row, row_index|
+    count = row.metrics.first.values.first
+    percent = (count.to_f / total_count.to_f) * 100
+
+    json[:items] << {
+      number: row_index + 1,
+      dimension_key => format_dimension(row.dimensions.first, dimension_key),
+      count: format_count(count),
+      percent: format_percent(percent),
+    }
+  end
+
+  total_count = format_count(total_count)
+  total_percent = "100"
+
+  number_width = row_count.to_s.length
+  count_width = total_count.length
+  percent_width = format_percent("100").length
+  dimension_width = Tty.width - number_width - count_width - percent_width - 10
+
+  if json_output
+    puts JSON.pretty_generate json
+    next
+  end
+
+  if first_report
+    title = "#{category} events in the last #{days_ago} days"
+    title += " for #{formula}" if formula
+  else
+    title = "#{category} events"
+  end
   puts title
   puts "=" * Tty.width
   (json[:items]).each do |item|
     number = format "%#{number_width}s", item[:number]
-    formula = format "%-#{formula_width}s", item[:formula][0..formula_width-1]
+    dimension = format "%-#{dimension_width}s", item[dimension_key][0..dimension_width-1]
     count = format "%#{count_width}s", item[:count]
     percent = format "%#{percent_width}s", item[:percent]
-    puts "#{number} | #{formula} | #{count} | #{percent}%"
+    puts "#{number} | #{dimension} | #{count} | #{percent}%"
   end
   puts "=" * Tty.width
-  total = format "%-#{formula_width + number_width + 3}s", "Total"
+  next unless json[:items].length > 1
+  total = format "%-#{dimension_width + number_width + 3}s", "Total"
   total_count = format "%#{count_width}s", total_count
   total_percent = format "%#{percent_width}s", total_percent
   puts "#{total} | #{total_count} | #{total_percent}%"
