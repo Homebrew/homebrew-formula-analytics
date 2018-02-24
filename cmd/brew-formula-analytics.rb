@@ -41,8 +41,10 @@ require_relative BUNDLER_SETUP
 require "google/apis/analyticsreporting_v4"
 require "googleauth"
 
+# rubocop:disable Style/MixinUsage
 include Google::Apis::AnalyticsreportingV4
 include Google::Auth
+# rubocop:enable Style/MixinUsage
 
 ANALYTICS_VIEW_ID = "120682403".freeze
 API_SCOPE = "https://www.googleapis.com/auth/analytics.readonly".freeze
@@ -51,7 +53,6 @@ API_SCOPE = "https://www.googleapis.com/auth/analytics.readonly".freeze
 # https://developers.google.com/api-client-library/ruby/auth/service-accounts
 credentials = ServiceAccountCredentials.make_creds(
   # Need to pass an open file descriptor here
-  # rubocop:disable Style/AutoResourceCleanup
   json_key_io: File.open(CREDENTIALS_PATH),
   scope: API_SCOPE,
 )
