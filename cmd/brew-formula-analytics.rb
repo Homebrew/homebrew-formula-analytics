@@ -1,4 +1,4 @@
-#:  * `formula-analytics` [`--days-ago=`<days>] [`--build-error`] [`--install-on-request`] [`--install`] [`--os-version`] [`--json`] [<formula>]:
+#:  * `formula-analytics` [`--days-ago=`<days>] [`--build-error`] [`--install-on-request`] [`--install`] [`--os-version`] [`--json`] [<formula>] [<formula> ...]:
 #:    Query Homebrew's anaytics for formula information
 #:
 #:    If `--days-ago=<days>` is passed, the query is from the specified days ago until the present. The default is 30 days.
@@ -49,6 +49,8 @@ include Google::Auth
 ANALYTICS_VIEW_ID = "120682403".freeze
 API_SCOPE = "https://www.googleapis.com/auth/analytics.readonly".freeze
 
+analytics_reporting_service = AnalyticsReportingService.new
+
 # Using a service account:
 # https://developers.google.com/api-client-library/ruby/auth/service-accounts
 credentials = ServiceAccountCredentials.make_creds(
@@ -56,8 +58,7 @@ credentials = ServiceAccountCredentials.make_creds(
   json_key_io: File.open(CREDENTIALS_PATH),
   scope: API_SCOPE,
 )
-
-formula = ARGV.named.first
+analytics_reporting_service.authorization = credentials
 
 FIRST_ANALYTICS_DATE = Date.parse("21 Apr 2016").freeze
 max_days_ago = (Date.today - FIRST_ANALYTICS_DATE).to_i
@@ -70,110 +71,119 @@ end
 json_output = ARGV.include?("--json")
 os_version = ARGV.include?("--os-version")
 
+formulae = ARGV.named
+
 categories = []
 categories << :install if ARGV.include?("--install")
 categories << :install_on_request if ARGV.include?("--install-on-request")
 categories << :BuildError if ARGV.include?("--build-error")
+json_or_multiple_formulae = json_output || formulae.length > 1
 if categories.empty?
-  if json_output
+  if json_or_multiple_formulae
     categories += [:install]
   else
     categories += [:install, :install_on_request, :BuildError]
   end
-elsif categories.length > 1
-  odie "Cannot specify multiple categories for JSON output!" if json_output
-end
-
-formula_name = if formula
-  begin
-    Formula[formula].full_name
-  rescue
-    formula
-  end
+elsif categories.length > 1 && json_or_multiple_formulae
+  odie "Cannot specify multiple categories for JSON output or multiple formulae!"
 end
 
 report_requests = []
 
-categories.each do |category|
-  dimension_filter_clauses = [
-    DimensionFilterClause.new(
-      filters: [
-        DimensionFilter.new(
-          dimension_name: "ga:eventCategory",
-          expressions: [category],
-          operator: "EXACT",
-        ),
-      ],
-    ),
-  ]
-
-  if formula_name
-    dimension_filter_clauses << DimensionFilterClause.new(
-      operator: "OR",
-      filters: [
-        DimensionFilter.new(
-          dimension_name: "ga:eventAction",
-          expressions: [formula_name],
-          operator: "EXACT",
-        ),
-        DimensionFilter.new(
-          dimension_name: "ga:eventAction",
-          expressions: ["#{formula_name} "],
-          operator: "BEGINS_WITH",
-        ),
-      ],
-    )
+formulae.each do |formula|
+  formula_name = if formula
+    begin
+      Formula[formula].full_name
+    rescue
+      formula
+    end
   end
 
-  dimension = if os_version
-    dimension_filter_clauses << DimensionFilterClause.new(
-      operator: "AND",
-      filters: [
-        DimensionFilter.new(
-          dimension_name: "ga:operatingSystemVersion",
-          not: true,
-          expressions: ["Intel"],
-          operator: "EXACT",
-        ),
-        DimensionFilter.new(
-          dimension_name: "ga:operatingSystemVersion",
-          not: true,
-          expressions: ["Intel 10.90"],
-          operator: "EXACT",
-        ),
-        DimensionFilter.new(
-          dimension_name: "ga:operatingSystemVersion",
-          not: true,
-          expressions: ["(not set)"],
-          operator: "EXACT",
-        ),
-      ],
-    )
-    Dimension.new name: "ga:operatingSystemVersion"
-  else
-    Dimension.new name: "ga:eventAction"
-  end
-  metric = Metric.new expression: "ga:totalEvents"
-  order_by = OrderBy.new field_name: "ga:totalEvents",
-                         sort_order: "DESCENDING"
-  date_range = DateRange.new start_date: "#{days_ago}daysAgo",
-                             end_date: "today"
+  categories.each do |category|
+    dimension_filter_clauses = [
+      DimensionFilterClause.new(
+        filters: [
+          DimensionFilter.new(
+            dimension_name: "ga:eventCategory",
+            expressions: [category],
+            operator: "EXACT",
+          ),
+        ],
+      ),
+    ]
 
-  report_requests << ReportRequest.new(
-    view_id: ANALYTICS_VIEW_ID,
-    dimensions: [dimension],
-    metrics: [metric],
-    order_bys: [order_by],
-    date_ranges: [date_range],
-    dimension_filter_clauses: dimension_filter_clauses,
-  )
+    if formula_name
+      dimension_filter_clauses << DimensionFilterClause.new(
+        operator: "OR",
+        filters: [
+          DimensionFilter.new(
+            dimension_name: "ga:eventAction",
+            expressions: [formula_name],
+            operator: "EXACT",
+          ),
+          DimensionFilter.new(
+            dimension_name: "ga:eventAction",
+            expressions: ["#{formula_name} "],
+            operator: "BEGINS_WITH",
+          ),
+        ],
+      )
+    end
+
+    dimension = if os_version
+      dimension_filter_clauses << DimensionFilterClause.new(
+        operator: "AND",
+        filters: [
+          DimensionFilter.new(
+            dimension_name: "ga:operatingSystemVersion",
+            not: true,
+            expressions: ["Intel"],
+            operator: "EXACT",
+          ),
+          DimensionFilter.new(
+            dimension_name: "ga:operatingSystemVersion",
+            not: true,
+            expressions: ["Intel 10.90"],
+            operator: "EXACT",
+          ),
+          DimensionFilter.new(
+            dimension_name: "ga:operatingSystemVersion",
+            not: true,
+            expressions: ["(not set)"],
+            operator: "EXACT",
+          ),
+        ],
+      )
+      Dimension.new name: "ga:operatingSystemVersion"
+    else
+      Dimension.new name: "ga:eventAction"
+    end
+    metric = Metric.new expression: "ga:totalEvents"
+    order_by = OrderBy.new field_name: "ga:totalEvents",
+                           sort_order: "DESCENDING"
+    date_range = DateRange.new start_date: "#{days_ago}daysAgo",
+                               end_date: "today"
+
+    report_requests << ReportRequest.new(
+      view_id: ANALYTICS_VIEW_ID,
+      dimensions: [dimension],
+      metrics: [metric],
+      order_bys: [order_by],
+      date_ranges: [date_range],
+      dimension_filter_clauses: dimension_filter_clauses,
+    )
+  end
 end
 
-analytics_reporting_service = AnalyticsReportingService.new
-analytics_reporting_service.authorization = credentials
-get_reports_request = GetReportsRequest.new
-get_reports_request.report_requests = report_requests
-response = analytics_reporting_service.batch_get_reports(get_reports_request)
+reports = []
+
+# batch reporting API will only allow 5 requests at a time
+report_requests.each_slice(5) do |rr|
+  get_reports_request = GetReportsRequest.new
+  get_reports_request.report_requests = rr
+  response = analytics_reporting_service.batch_get_reports(get_reports_request)
+  reports += response.reports
+end
 
 dimension_key = os_version ? :os_version : :formula
 
@@ -205,11 +215,16 @@ def format_dimension(dimension, key)
   end
 end
 
-response.reports.each_with_index do |report, index|
+reports.each_with_index do |report, index|
   first_report = index.zero?
   puts unless first_report
 
-  category = categories.at index
+  category = if categories.length > 1
+    categories.at index
+  else
+    categories.first
+  end
+
   row_count = report.data.row_count.to_i
   if row_count.zero?
     onoe "No #{category} data found!"
@@ -219,6 +234,7 @@ response.reports.each_with_index do |report, index|
   total_count = report.data.totals.first.values.first.to_i
 
   json = {
+    formula: nil,
     category: category,
     total_items: row_count,
     start_date: Date.today - days_ago.to_i,
@@ -226,7 +242,7 @@ response.reports.each_with_index do |report, index|
     total_count: total_count,
     items: [],
   }
-  json[:formula] = formula if formula
+  json[:formula] = report.data.rows.first.dimensions.first
 
   report.data.rows.each_with_index do |row, row_index|
     count = row.metrics.first.values.first
@@ -253,13 +269,7 @@ response.reports.each_with_index do |report, index|
     next
   end
 
-  if first_report
-    title = "#{category} events in the last #{days_ago} days"
-    title += " for #{formula}" if formula
-  else
-    title = "#{category} events"
-  end
-  puts title
+  puts "#{category} events in the last #{days_ago} days"
   puts "=" * Tty.width
   (json[:items]).each do |item|
     number = format "%#{number_width}s", item[:number]
