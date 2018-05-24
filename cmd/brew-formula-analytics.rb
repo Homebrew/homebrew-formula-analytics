@@ -71,7 +71,11 @@ end
 json_output = ARGV.include?("--json")
 os_version = ARGV.include?("--os-version")
 
-formulae = ARGV.named
+formulae = if !ARGV.named.empty?
+  ARGV.named
+else
+  [nil]
+end
 
 categories = []
 categories << :install if ARGV.include?("--install")
