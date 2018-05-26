@@ -13,7 +13,7 @@
 #:
 #:    If `--json` is passed, the output is in JSON rather than plain text.
 #:
-#:    If `<formula>` is passed, the results will be filtered to this formula. If this is not passed, the top 1000 formulae will be shown.
+#:    If `<formula>` is passed, the results will be filtered to this formula. If this is not passed, the top 10,000 formulae will be shown.
 #:
 
 CREDENTIALS_PATH = "#{ENV["HOME"]}/.homebrew_analytics.json".freeze
@@ -49,6 +49,7 @@ include Google::Auth
 ANALYTICS_VIEW_ID = "120682403".freeze
 API_SCOPE = "https://www.googleapis.com/auth/analytics.readonly".freeze
 
+# https://www.rubydoc.info/github/google/google-api-ruby-client/Google/Apis/AnalyticsreportingV4/AnalyticsReportingService
 analytics_reporting_service = AnalyticsReportingService.new
 
 # Using a service account:
@@ -168,6 +169,7 @@ formulae.each do |formula|
     date_range = DateRange.new start_date: "#{days_ago}daysAgo",
                                end_date: "today"
 
+    # https://www.rubydoc.info/github/google/google-api-ruby-client/Google/Apis/AnalyticsreportingV4/ReportRequest
     report_requests << ReportRequest.new(
       view_id: ANALYTICS_VIEW_ID,
       dimensions: [dimension],
@@ -175,18 +177,30 @@ formulae.each do |formula|
       order_bys: [order_by],
       date_ranges: [date_range],
       dimension_filter_clauses: dimension_filter_clauses,
+      page_size: 10_000,
+      sampling_level: :LARGE,
     )
   end
 end
 
 reports = []
 
-# batch reporting API will only allow 5 requests at a time
-report_requests.each_slice(5) do |rr|
-  get_reports_request = GetReportsRequest.new
-  get_reports_request.report_requests = rr
-  response = analytics_reporting_service.batch_get_reports(get_reports_request)
-  reports += response.reports
+get_reports_request = GetReportsRequest.new
+report_requests.each_slice(50) do |report_requests_slice|
+  # batch multiple HTTP calls into a single request
+  # https://developers.google.com/api-client-library/ruby/guide/batch
+  analytics_reporting_service.batch do |service|
+    # batch reporting API will only allow 5 requests at a time
+    report_requests_slice.each_slice(5) do |rr|
+      get_reports_request.report_requests = rr
+      service.batch_get_reports(
+        get_reports_request,
+      ) do |response, error|
+        raise error if error
+        reports += response.reports
+      end
+    end
+  end
 end
 
 dimension_key = os_version ? :os_version : :formula
@@ -246,7 +260,11 @@ reports.each_with_index do |report, index|
     total_count: total_count,
     items: [],
   }
-  json[:formula] = report.data.rows.first.dimensions.first
+  if formulae.compact.empty?
+    json.delete(:formula)
+  else
+    json[:formula] = report.data.rows.first.dimensions.first
+  end
 
   report.data.rows.each_with_index do |row, row_index|
     count = row.metrics.first.values.first
