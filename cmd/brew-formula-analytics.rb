@@ -13,6 +13,8 @@
 #:
 #:    If `--json` is passed, the output is in JSON rather than plain text.
 #:
+#:    If `--all-core-formulae-json` is passed, the output is in a different JSON format and contains the JSON data for all Homebrew/homebrew-core formulae.
+#:
 #:    If `<formula>` is passed, the results will be filtered to this formula. If this is not passed, the top 10,000 formulae will be shown.
 #:
 
@@ -71,6 +73,8 @@ end
 
 json_output = ARGV.include?("--json")
 os_version = ARGV.include?("--os-version")
+all_core_formulae_json = ARGV.include?("--all-core-formulae-json")
+json_output ||= all_core_formulae_json
 
 formulae = if !ARGV.named.empty?
   ARGV.named
@@ -117,7 +121,19 @@ formulae.each do |formula|
       ),
     ]
 
-    if formula_name
+    if all_core_formulae_json
+      dimension_filter_clauses << DimensionFilterClause.new(
+        operator: "OR",
+        filters: [
+          DimensionFilter.new(
+            dimension_name: "ga:eventAction",
+            expressions: ["/"],
+            operator: "PARTIAL",
+            not: true,
+          ),
+        ],
+      )
+    elsif formula_name
       dimension_filter_clauses << DimensionFilterClause.new(
         operator: "OR",
         filters: [
@@ -258,7 +274,6 @@ reports.each_with_index do |report, index|
     start_date: Date.today - days_ago.to_i,
     end_date: Date.today,
     total_count: total_count,
-    items: [],
   }
   if formulae.compact.empty?
     json.delete(:formula)
@@ -269,13 +284,29 @@ reports.each_with_index do |report, index|
   report.data.rows.each_with_index do |row, row_index|
     count = row.metrics.first.values.first
     percent = (count.to_f / total_count.to_f) * 100
-
-    json[:items] << {
+    dimension = format_dimension(row.dimensions.first, dimension_key)
+    item = {
       number: row_index + 1,
-      dimension_key => format_dimension(row.dimensions.first, dimension_key),
+      dimension_key => dimension,
       count: format_count(count),
       percent: format_percent(percent),
     }
+
+    if all_core_formulae_json
+      item.delete(:number)
+      item.delete(:percent)
+      formula_name = dimension.split.first.downcase.to_sym
+      json[:formulae] ||= {}
+      json[:formulae][formula_name] ||= []
+      json[:formulae][formula_name] << item
+    else
+      json[:items] ||= []
+      json[:items] << item
+    end
+  end
+
+  if all_core_formulae_json
+    json[:formulae] = Hash[json[:formulae].sort_by { |name, _| name }]
   end
 
   total_count = format_count(total_count)
