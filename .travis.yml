@@ -52,4 +52,4 @@ before_install:
 
 script:
   - brew style "$TRAVIS_REPO_SLUG"
-  - brew formula-analytics --help
+  - brew formula-analytics --setup

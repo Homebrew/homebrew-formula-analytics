@@ -1,4 +1,4 @@
-#:  * `formula-analytics` [`--days-ago=`<days>] [`--build-error`] [`--install-on-request`] [`--install`] [`--os-version`] [`--json`] [<formula>] [<formula> ...]:
+#:  * `formula-analytics` [`--days-ago=`<days>] [`--build-error`] [`--install-on-request`] [`--install`] [`--os-version`] [`--json`] [`--all-core-formulae-json`] [`--setup`] [<formula>] [<formula> ...]:
 #:    Query Homebrew's anaytics for formula information
 #:
 #:    If `--days-ago=<days>` is passed, the query is from the specified days ago until the present. The default is 30 days.
@@ -15,13 +15,10 @@
 #:
 #:    If `--all-core-formulae-json` is passed, the output is in a different JSON format and contains the JSON data for all Homebrew/homebrew-core formulae.
 #:
+#:    If `--setup` is passed, install the necessary gems and require them and exit once that is done.
+#:
 #:    If `<formula>` is passed, the results will be filtered to this formula. If this is not passed, the top 10,000 formulae will be shown.
 #:
-
-CREDENTIALS_PATH = "#{ENV["HOME"]}/.homebrew_analytics.json".freeze
-unless File.exist? CREDENTIALS_PATH
-  odie "No Google Analytics credentials found at #{CREDENTIALS_PATH}!"
-end
 
 # Configure RubyGems.
 REPO_ROOT = Pathname.new "#{File.dirname(__FILE__)}/.."
@@ -53,6 +50,13 @@ API_SCOPE = "https://www.googleapis.com/auth/analytics.readonly".freeze
 
 # https://www.rubydoc.info/github/google/google-api-ruby-client/Google/Apis/AnalyticsreportingV4/AnalyticsReportingService
 analytics_reporting_service = AnalyticsReportingService.new
+
+exit if ARGV.include?("--setup")
+
+CREDENTIALS_PATH = "#{ENV["HOME"]}/.homebrew_analytics.json".freeze
+unless File.exist? CREDENTIALS_PATH
+  odie "No Google Analytics credentials found at #{CREDENTIALS_PATH}!"
+end
 
 # Using a service account:
 # https://developers.google.com/api-client-library/ruby/auth/service-accounts
