@@ -247,6 +247,7 @@ def format_dimension(dimension, key)
   when "10.11" then "OS X El Capitan (10.11)"
   when "10.12" then "macOS Sierra (10.12)"
   when "10.13" then "macOS High Sierra (10.13)"
+  when "10.14" then "macOS Mojave (10.14)"
   when /10\.\d+/ then "macOS (#{dimension})"
   when "" then "Unknown"
   else dimension
