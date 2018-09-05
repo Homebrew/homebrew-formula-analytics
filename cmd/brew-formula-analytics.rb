@@ -58,6 +58,10 @@ unless File.exist? CREDENTIALS_PATH
   odie "No Google Analytics credentials found at #{CREDENTIALS_PATH}!"
 end
 
+if ENV["HOMEBREW_NO_ANALYTICS"]
+  odie "HOMEBREW_NO_ANALYTICS is set!"
+end
+
 # Using a service account:
 # https://developers.google.com/api-client-library/ruby/auth/service-accounts
 credentials = ServiceAccountCredentials.make_creds(
