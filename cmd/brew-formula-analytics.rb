@@ -1,23 +1,21 @@
-#:  * `formula-analytics` [`--days-ago=`<days>] [`--build-error`] [`--install-on-request`] [`--install`] [`--os-version`] [`--json`] [`--all-core-formulae-json`] [`--setup`] [<formula>] [<formula> ...]:
-#:    Query Homebrew's anaytics for formula information
+#:  * `formula-analytics` [`--days-ago=`<days>] [`--install` | `--install-on-request` | `--build-error` | `--os-version`] (`--json` | `--all-core-formulae-json` | `--setup`):
+#:    Query Homebrew's anaytics for formula information. The top 10,000 formulae will be shown.
 #:
 #:    If `--days-ago=<days>` is passed, the query is from the specified days ago until the present. The default is 30 days.
 #:
-#:    If `--build-error` is passed, the number of build errors for the formulae are shown.
+#:    If `--install` is passed, the number of specifically requested installations or installation as dependencies of the formula are shown. This is the default.
 #:
 #:    If `--install-on-request` is passed, the number of specifically requested installations of the formula are shown.
 #:
-#:    If `--install` is passed, the number of specifically requested installations or installation as dependencies of the formula are shown. This is the default.
+#:    If `--build-error` is passed, the number of build errors for the formulae are shown.
 #:
 #:    If `--os-version` is passed, output OS versions rather than formulae names.
 #:
-#:    If `--json` is passed, the output is in JSON rather than plain text.
+#:    If `--json` is passed, the output is in JSON. Plain text support has been removed.
 #:
 #:    If `--all-core-formulae-json` is passed, the output is in a different JSON format and contains the JSON data for all Homebrew/homebrew-core formulae.
 #:
 #:    If `--setup` is passed, install the necessary gems and require them and exit once that is done.
-#:
-#:    If `<formula>` is passed, the results will be filtered to this formula. If this is not passed, the top 10,000 formulae will be shown.
 #:
 
 # Configure RubyGems.
@@ -83,128 +81,91 @@ json_output = ARGV.include?("--json")
 os_version = ARGV.include?("--os-version")
 all_core_formulae_json = ARGV.include?("--all-core-formulae-json")
 json_output ||= all_core_formulae_json
-
-formulae = if !ARGV.named.empty?
-  ARGV.named
-else
-  [nil]
-end
+odie "Only JSON output is now supported!" unless json_output
 
 categories = []
 categories << :install if ARGV.include?("--install")
 categories << :install_on_request if ARGV.include?("--install-on-request")
 categories << :BuildError if ARGV.include?("--build-error")
-json_or_multiple_formulae = json_output || formulae.length > 1
-if categories.empty?
-  if json_or_multiple_formulae
-    categories += [:install]
-  else
-    categories += [:install, :install_on_request, :BuildError]
-  end
-elsif categories.length > 1 && json_or_multiple_formulae
-  odie "Cannot specify multiple categories for JSON output or multiple formulae!"
-end
+categories += [:install] if categories.empty?
+odie "Cannot specify multiple categories!" if categories.length > 1
+
+odie "Formulae arguments are no longer supported!" unless ARGV.named.empty?
 
 report_requests = []
 
-formulae.each do |formula|
-  formula_name = if formula
-    begin
-      Formula[formula].full_name
-    rescue
-      formula
-    end
-  end
+categories.each do |category|
+  dimension_filter_clauses = [
+    DimensionFilterClause.new(
+      filters: [
+        DimensionFilter.new(
+          dimension_name: "ga:eventCategory",
+          expressions: [category],
+          operator: "EXACT",
+        ),
+      ],
+    ),
+  ]
 
-  categories.each do |category|
-    dimension_filter_clauses = [
-      DimensionFilterClause.new(
-        filters: [
-          DimensionFilter.new(
-            dimension_name: "ga:eventCategory",
-            expressions: [category],
-            operator: "EXACT",
-          ),
-        ],
-      ),
-    ]
-
-    if all_core_formulae_json
-      dimension_filter_clauses << DimensionFilterClause.new(
-        operator: "OR",
-        filters: [
-          DimensionFilter.new(
-            dimension_name: "ga:eventAction",
-            expressions: ["/"],
-            operator: "PARTIAL",
-            not: true,
-          ),
-        ],
-      )
-    elsif formula_name
-      dimension_filter_clauses << DimensionFilterClause.new(
-        operator: "OR",
-        filters: [
-          DimensionFilter.new(
-            dimension_name: "ga:eventAction",
-            expressions: [formula_name],
-            operator: "EXACT",
-          ),
-          DimensionFilter.new(
-            dimension_name: "ga:eventAction",
-            expressions: ["#{formula_name} "],
-            operator: "BEGINS_WITH",
-          ),
-        ],
-      )
-    end
-
-    dimension = if os_version
-      dimension_filter_clauses << DimensionFilterClause.new(
-        operator: "AND",
-        filters: [
-          DimensionFilter.new(
-            dimension_name: "ga:operatingSystemVersion",
-            not: true,
-            expressions: ["Intel"],
-            operator: "EXACT",
-          ),
-          DimensionFilter.new(
-            dimension_name: "ga:operatingSystemVersion",
-            not: true,
-            expressions: ["Intel 10.90"],
-            operator: "EXACT",
-          ),
-          DimensionFilter.new(
-            dimension_name: "ga:operatingSystemVersion",
-            not: true,
-            expressions: ["(not set)"],
-            operator: "EXACT",
-          ),
-        ],
-      )
-      Dimension.new name: "ga:operatingSystemVersion"
-    else
-      Dimension.new name: "ga:eventAction"
-    end
-    metric = Metric.new expression: "ga:totalEvents"
-    order_by = OrderBy.new field_name: "ga:totalEvents",
-                           sort_order: "DESCENDING"
-    date_range = DateRange.new start_date: "#{days_ago}daysAgo",
-                               end_date: "today"
-
-    # https://www.rubydoc.info/github/google/google-api-ruby-client/Google/Apis/AnalyticsreportingV4/ReportRequest
-    report_requests << ReportRequest.new(
-      view_id: ANALYTICS_VIEW_ID,
-      dimensions: [dimension],
-      metrics: [metric],
-      order_bys: [order_by],
-      date_ranges: [date_range],
-      dimension_filter_clauses: dimension_filter_clauses,
-      page_size: 10_000,
-      sampling_level: :LARGE,
+  if all_core_formulae_json
+    dimension_filter_clauses << DimensionFilterClause.new(
+      operator: "OR",
+      filters: [
+        DimensionFilter.new(
+          dimension_name: "ga:eventAction",
+          expressions: ["/"],
+          operator: "PARTIAL",
+          not: true,
+        ),
+      ],
     )
   end
+
+  dimension = if os_version
+    dimension_filter_clauses << DimensionFilterClause.new(
+      operator: "AND",
+      filters: [
+        DimensionFilter.new(
+          dimension_name: "ga:operatingSystemVersion",
+          not: true,
+          expressions: ["Intel"],
+          operator: "EXACT",
+        ),
+        DimensionFilter.new(
+          dimension_name: "ga:operatingSystemVersion",
+          not: true,
+          expressions: ["Intel 10.90"],
+          operator: "EXACT",
+        ),
+        DimensionFilter.new(
+          dimension_name: "ga:operatingSystemVersion",
+          not: true,
+          expressions: ["(not set)"],
+          operator: "EXACT",
+        ),
+      ],
+    )
+    Dimension.new name: "ga:operatingSystemVersion"
+  else
+    Dimension.new name: "ga:eventAction"
+  end
+  metric = Metric.new expression: "ga:totalEvents"
+  order_by = OrderBy.new field_name: "ga:totalEvents",
+                         sort_order: "DESCENDING"
+  date_range = DateRange.new start_date: "#{days_ago}daysAgo",
+                             end_date: "today"
+
+  # https://www.rubydoc.info/github/google/google-api-ruby-client/Google/Apis/AnalyticsreportingV4/ReportRequest
+  report_requests << ReportRequest.new(
+    view_id: ANALYTICS_VIEW_ID,
+    dimensions: [dimension],
+    metrics: [metric],
+    order_bys: [order_by],
+    date_ranges: [date_range],
+    dimension_filter_clauses: dimension_filter_clauses,
+    page_size: 10_000,
+    sampling_level: :LARGE,
+  )
 end
 
 reports = []
@@ -277,18 +238,12 @@ reports.each_with_index do |report, index|
   total_count = report.data.totals.first.values.first.to_i
 
   json = {
-    formula: nil,
     category: category,
     total_items: row_count,
     start_date: Date.today - days_ago.to_i,
     end_date: Date.today,
     total_count: total_count,
   }
-  if formulae.compact.empty?
-    json.delete(:formula)
-  else
-    json[:formula] = report.data.rows.first.dimensions.first
-  end
 
   report.data.rows.each_with_index do |row, row_index|
     count = row.metrics.first.values.first
@@ -318,33 +273,5 @@ reports.each_with_index do |report, index|
     json[:formulae] = Hash[json[:formulae].sort_by { |name, _| name }]
   end
 
-  total_count = format_count(total_count)
-  total_percent = "100"
-
-  number_width = row_count.to_s.length
-  count_width = total_count.length
-  percent_width = format_percent("100").length
-  dimension_width = Tty.width - number_width - count_width - percent_width - 10
-
-  if json_output
-    puts JSON.pretty_generate json
-    next
-  end
-
-  puts "#{category} events in the last #{days_ago} days"
-  puts "=" * Tty.width
-  (json[:items]).each do |item|
-    number = format "%#{number_width}s", item[:number]
-    dimension = format "%-#{dimension_width}s", item[dimension_key][0..dimension_width-1]
-    count = format "%#{count_width}s", item[:count]
-    percent = format "%#{percent_width}s", item[:percent]
-    puts "#{number} | #{dimension} | #{count} | #{percent}%"
-  end
-  puts "=" * Tty.width
-  next unless json[:items].length > 1
-  total = format "%-#{dimension_width + number_width + 3}s", "Total"
-  total_count = format "%#{count_width}s", total_count
-  total_percent = format "%#{percent_width}s", total_percent
-  puts "#{total} | #{total_count} | #{total_percent}%"
-  puts "=" * Tty.width
+  puts JSON.pretty_generate json
 end
