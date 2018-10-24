@@ -1,7 +1,7 @@
 # Homebrew Formula Analytics
-Provides `brew formula-analytics` for Homebrew maintainers to be able to query [Homebrew's analytics](https://docs.brew.sh/Analytics) from the command-line.
+Provides `brew formula-analytics` JSON output for [formulae.brew.sh](https://formulae.brew.sh)'s analytics data.
 
-This is restricted to maintainers only because it's not clear how to provide anonymous, read-only access to Google Analytics.
+You can access Homebrew's analytics with `brew info --analytics`, `brew info <formula>` and `brew info -v <formula>`
 
 ## License
 Code is under the [BSD 2-clause "Simplified" License](https://github.com/Homebrew/homebrew-formula-analytics/blob/master/LICENSE.txt).
