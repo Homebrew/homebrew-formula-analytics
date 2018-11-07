@@ -65,7 +65,7 @@ end
 credentials = ServiceAccountCredentials.make_creds(
   # Need to pass an open file descriptor here
   json_key_io: File.open(CREDENTIALS_PATH),
-  scope: API_SCOPE,
+  scope:       API_SCOPE,
 )
 analytics_reporting_service.authorization = credentials
 
@@ -100,8 +100,8 @@ categories.each do |category|
       filters: [
         DimensionFilter.new(
           dimension_name: "ga:eventCategory",
-          expressions: [category],
-          operator: "EXACT",
+          expressions:    [category],
+          operator:       "EXACT",
         ),
       ],
     ),
@@ -110,12 +110,12 @@ categories.each do |category|
   if all_core_formulae_json
     dimension_filter_clauses << DimensionFilterClause.new(
       operator: "OR",
-      filters: [
+      filters:  [
         DimensionFilter.new(
           dimension_name: "ga:eventAction",
-          expressions: ["/"],
-          operator: "PARTIAL",
-          not: true,
+          expressions:    ["/"],
+          operator:       "PARTIAL",
+          not:            true,
         ),
       ],
     )
@@ -124,24 +124,24 @@ categories.each do |category|
   dimension = if os_version
     dimension_filter_clauses << DimensionFilterClause.new(
       operator: "AND",
-      filters: [
+      filters:  [
         DimensionFilter.new(
           dimension_name: "ga:operatingSystemVersion",
-          not: true,
-          expressions: ["Intel"],
-          operator: "EXACT",
+          not:            true,
+          expressions:    ["Intel"],
+          operator:       "EXACT",
         ),
         DimensionFilter.new(
           dimension_name: "ga:operatingSystemVersion",
-          not: true,
-          expressions: ["Intel 10.90"],
-          operator: "EXACT",
+          not:            true,
+          expressions:    ["Intel 10.90"],
+          operator:       "EXACT",
         ),
         DimensionFilter.new(
           dimension_name: "ga:operatingSystemVersion",
-          not: true,
-          expressions: ["(not set)"],
-          operator: "EXACT",
+          not:            true,
+          expressions:    ["(not set)"],
+          operator:       "EXACT",
         ),
       ],
     )
@@ -153,18 +153,18 @@ categories.each do |category|
   order_by = OrderBy.new field_name: "ga:totalEvents",
                          sort_order: "DESCENDING"
   date_range = DateRange.new start_date: "#{days_ago}daysAgo",
-                             end_date: "today"
+                             end_date:   "today"
 
   # https://www.rubydoc.info/github/google/google-api-ruby-client/Google/Apis/AnalyticsreportingV4/ReportRequest
   report_requests << ReportRequest.new(
-    view_id: ANALYTICS_VIEW_ID,
-    dimensions: [dimension],
-    metrics: [metric],
-    order_bys: [order_by],
-    date_ranges: [date_range],
+    view_id:                  ANALYTICS_VIEW_ID,
+    dimensions:               [dimension],
+    metrics:                  [metric],
+    order_bys:                [order_by],
+    date_ranges:              [date_range],
     dimension_filter_clauses: dimension_filter_clauses,
-    page_size: 10_000,
-    sampling_level: :LARGE,
+    page_size:                10_000,
+    sampling_level:           :LARGE,
   )
 end
 
@@ -238,10 +238,10 @@ reports.each_with_index do |report, index|
   total_count = report.data.totals.first.values.first.to_i
 
   json = {
-    category: category,
+    category:    category,
     total_items: row_count,
-    start_date: Date.today - days_ago.to_i,
-    end_date: Date.today,
+    start_date:  Date.today - days_ago.to_i,
+    end_date:    Date.today,
     total_count: total_count,
   }
 
