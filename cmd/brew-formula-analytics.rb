@@ -5,6 +5,8 @@
 #:
 #:    If `--install` is passed, the number of specifically requested installations or installation as dependencies of the formula are shown. This is the default.
 #:
+#:    If `--cask-install` is passed, the number of specifically requested installations or installation as dependencies of casks are shown.
+#:
 #:    If `--install-on-request` is passed, the number of specifically requested installations of the formula are shown.
 #:
 #:    If `--build-error` is passed, the number of build errors for the formulae are shown.
@@ -85,6 +87,7 @@ odie "Only JSON output is now supported!" unless json_output
 
 categories = []
 categories << :install if ARGV.include?("--install")
+categories << :cask_install if ARGV.include?("--cask-install")
 categories << :install_on_request if ARGV.include?("--install-on-request")
 categories << :BuildError if ARGV.include?("--build-error")
 categories += [:install] if categories.empty?
