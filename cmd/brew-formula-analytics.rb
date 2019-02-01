@@ -191,7 +191,13 @@ report_requests.each_slice(50) do |report_requests_slice|
   end
 end
 
-dimension_key = os_version ? :os_version : :formula
+dimension_key = if os_version
+  :os_version
+elsif categories.include?(:cask_install)
+  :cask
+else
+  :formula
+end
 
 def format_count(count)
   count.to_s.reverse.gsub(/(\d{3})(?=\d)/, '\\1,').reverse
