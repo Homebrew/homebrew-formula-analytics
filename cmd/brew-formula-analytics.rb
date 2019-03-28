@@ -185,6 +185,7 @@ report_requests.each_slice(50) do |report_requests_slice|
         get_reports_request,
       ) do |response, error|
         raise error if error
+
         reports += response.reports
       end
     end
@@ -209,6 +210,7 @@ end
 
 def format_dimension(dimension, key)
   return dimension if key != :os_version
+
   dimension.gsub!(/^Intel ?/, "")
   case dimension
   when "10.4" then "Mac OS X Tiger (10.4)"
