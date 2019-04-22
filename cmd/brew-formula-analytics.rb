@@ -21,6 +21,7 @@
 #:
 
 # Configure RubyGems.
+require "rubygems"
 REPO_ROOT = Pathname.new "#{File.dirname(__FILE__)}/.."
 VENDOR_RUBY = "#{REPO_ROOT}/vendor/ruby".freeze
 BUNDLER_SETUP = Pathname.new "#{VENDOR_RUBY}/bundler/setup.rb"
