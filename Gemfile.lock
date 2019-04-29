@@ -30,7 +30,7 @@ GEM
     mime-types-data (3.2019.0331)
     multi_json (1.13.1)
     multipart-post (2.0.0)
-    os (1.0.0)
+    os (1.0.1)
     public_suffix (3.0.3)
     representable (3.0.4)
       declarative (< 0.1.0)
