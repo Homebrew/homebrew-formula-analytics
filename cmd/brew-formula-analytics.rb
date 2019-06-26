@@ -260,7 +260,7 @@ reports.each_with_index do |report, index|
 
   report.data.rows.each_with_index do |row, row_index|
     count = row.metrics.first.values.first
-    percent = (count.to_f / total_count.to_f) * 100
+    percent = (count.to_f / total_count) * 100
     dimension = format_dimension(row.dimensions.first, dimension_key)
     item = {
       number: row_index + 1,
