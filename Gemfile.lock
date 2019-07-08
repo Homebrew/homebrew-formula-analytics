@@ -25,7 +25,7 @@ GEM
     httpclient (2.8.3)
     jwt (2.2.1)
     memoist (0.16.0)
-    mini_mime (1.0.1)
+    mini_mime (1.0.2)
     multi_json (1.13.1)
     multipart-post (2.1.1)
     os (1.0.1)
