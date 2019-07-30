@@ -19,6 +19,7 @@
 #:
 #:    If `--setup` is passed, install the necessary gems and require them and exit once that is done.
 #:
+#:    If `--linux` is passed, read analytics from Linuxbrew's Google Analytics account.
 
 # Configure RubyGems.
 require "rubygems"
@@ -46,7 +47,12 @@ include Google::Apis::AnalyticsreportingV4
 include Google::Auth
 # rubocop:enable Style/MixinUsage
 
-ANALYTICS_VIEW_ID = "120682403".freeze
+ANALYTICS_VIEW_ID = if ARGV.include?("--linux")
+  "120391035"
+else
+  "120682403"
+end.freeze
+
 API_SCOPE = "https://www.googleapis.com/auth/analytics.readonly".freeze
 
 # https://www.rubydoc.info/github/google/google-api-ruby-client/Google/Apis/AnalyticsreportingV4/AnalyticsReportingService
