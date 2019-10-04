@@ -212,7 +212,7 @@ def format_count(count)
 end
 
 def format_percent(percent)
-  format "%.2f", percent
+  format "%<percent>.2f", percent: percent
 end
 
 def format_dimension(dimension, key)
