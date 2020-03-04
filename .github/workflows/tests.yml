@@ -13,28 +13,32 @@ jobs:
     - name: Set up Git repository
       uses: actions/checkout@master
 
-    - name: Install Homebrew on Linux
-      run: |
-        HOMEBREW_REPOSITORY=/home/linuxbrew/.linuxbrew
-        sudo mkdir -p /home/linuxbrew
-        sudo git clone https://github.com/Homebrew/brew "$HOMEBREW_REPOSITORY"
-        sudo mkdir -p "$HOMEBREW_REPOSITORY/Library/Taps/homebrew"
-        sudo ln -s "$PWD" "$HOMEBREW_REPOSITORY/Library/Taps/homebrew/homebrew-formula-analytics"
-        sudo chown -R "$USER" "$HOMEBREW_REPOSITORY"
-      if: matrix.os == 'ubuntu-latest'
-
     - name: Set up Homebrew
       run: |
-        brew update-reset /usr/local/Homebrew
-        ln -s "$PWD" "/usr/local/Homebrew/Library/Taps/homebrew/homebrew-formula-analytics"
-      if: matrix.os == 'macOS-latest'
+        if [ "$RUNNER_OS" = "Linux" ]; then
+          umask 022
+          HOMEBREW_REPOSITORY=/home/linuxbrew/.linuxbrew
+          sudo mkdir -p /home/linuxbrew
+          sudo git clone https://github.com/Homebrew/brew "$HOMEBREW_REPOSITORY"
+          sudo mkdir -p "$HOMEBREW_REPOSITORY/Library/Taps/homebrew"
+          sudo ln -s "$PWD" "$HOMEBREW_REPOSITORY/Library/Taps/homebrew/homebrew-formula-analytics"
+          sudo chown -R "$USER" /home/linuxbrew
+          sudo chmod -R og-w /home/linuxbrew
+        else
+          brew update-reset /usr/local/Homebrew
+          ln -s "$PWD" "/usr/local/Homebrew/Library/Taps/homebrew/homebrew-formula-analytics"
+        fi
+
+    - name: Set up Homebrew PATH
+      run: |
+        if [ "$RUNNER_OS" = "macOS" ]; then
+          echo "::add-path::/usr/local/bin:/usr/bin:/bin"
+        else
+          echo "::add-path::/home/linuxbrew/.linuxbrew/bin:/usr/bin:/bin"
+        fi
 
     - name: Run brew style
-      run: |
-        export PATH="/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:$PATH"
-        brew style homebrew/formula-analytics
+      run: brew style homebrew/formula-analytics
 
     - name: Test formula-analytics setup
-      run: |
-        export PATH="/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:$PATH"
-        brew formula-analytics --setup
+      run: brew formula-analytics --setup
