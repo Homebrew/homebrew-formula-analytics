@@ -13,7 +13,8 @@ module Homebrew
       flag   "--days-ago=",
              description: "Query from the specified days ago until the present. The default is 30 days."
       switch "--install",
-             description: "Show the number of specifically requested installations or installation as dependencies of the formula. This is the default."
+             description: "Show the number of specifically requested installations or installation as "\
+                          "dependencies of the formula. This is the default."
       switch "--cask-install",
              description: "Show the number of installations of casks."
       switch "--install-on-request",
@@ -25,7 +26,8 @@ module Homebrew
       switch "--json",
              description: "Output JSON. This is required: plain text support has been removed."
       switch "--all-core-formulae-json",
-             description: "Output a different JSON format containing the JSON data for all Homebrew/homebrew-core formulae."
+             description: "Output a different JSON format containing the JSON data for all " \
+                          "Homebrew/homebrew-core formulae."
       switch "--setup",
              description: "Install the necessary gems, require them and exit without running a query."
       switch "--linux",
@@ -82,13 +84,9 @@ module Homebrew
 
     return if Homebrew.args.setup?
 
-    unless File.exist? CREDENTIALS_PATH
-      odie "No Google Analytics credentials found at #{CREDENTIALS_PATH}!"
-    end
+    odie "No Google Analytics credentials found at #{CREDENTIALS_PATH}!" unless File.exist? CREDENTIALS_PATH
 
-    if ENV["HOMEBREW_NO_ANALYTICS"]
-      odie "HOMEBREW_NO_ANALYTICS is set!"
-    end
+    odie "HOMEBREW_NO_ANALYTICS is set!" if ENV["HOMEBREW_NO_ANALYTICS"]
 
     # Using a service account:
     # https://developers.google.com/api-client-library/ruby/auth/service-accounts
@@ -274,9 +272,7 @@ module Homebrew
         end
       end
 
-      if all_core_formulae_json
-        json[:formulae] = Hash[json[:formulae].sort_by { |name, _| name }]
-      end
+      json[:formulae] = Hash[json[:formulae].sort_by { |name, _| name }] if all_core_formulae_json
 
       puts JSON.pretty_generate json
     end
