@@ -15,27 +15,28 @@ jobs:
 
     - name: Set up Homebrew
       run: |
-        if [ "$RUNNER_OS" = "Linux" ]; then
-          umask 022
-          HOMEBREW_REPOSITORY=/home/linuxbrew/.linuxbrew
-          sudo mkdir -p /home/linuxbrew
-          sudo git clone https://github.com/Homebrew/brew "$HOMEBREW_REPOSITORY"
+        if which brew &>/dev/null; then
+          HOMEBREW_PREFIX="$(brew --prefix)"
+          HOMEBREW_REPOSITORY="$HOMEBREW_PREFIX/Homebrew"
+          brew update-reset "$HOMEBREW_REPOSITORY"
+          ln -s "$PWD" "$HOMEBREW_REPOSITORY/Library/Taps/homebrew/homebrew-formula-analytics"
+        else
+          HOMEBREW_PREFIX=/home/linuxbrew/.linuxbrew
+          HOMEBREW_REPOSITORY="$HOMEBREW_PREFIX/Homebrew"
+          sudo mkdir -p $HOMEBREW_PREFIX
+          sudo git clone --depth=1 https://github.com/Homebrew/brew "$HOMEBREW_REPOSITORY"
+
           sudo mkdir -p "$HOMEBREW_REPOSITORY/Library/Taps/homebrew"
           sudo ln -s "$PWD" "$HOMEBREW_REPOSITORY/Library/Taps/homebrew/homebrew-formula-analytics"
-          sudo chown -R "$USER" /home/linuxbrew
-          sudo chmod -R og-w /home/linuxbrew
-        else
-          brew update-reset /usr/local/Homebrew
-          ln -s "$PWD" "/usr/local/Homebrew/Library/Taps/homebrew/homebrew-formula-analytics"
+
+          cd "$HOMEBREW_PREFIX"
+          sudo mkdir -p bin etc include lib opt sbin share var/homebrew/linked Cellar
+          sudo ln -sf ../Homebrew/bin/brew "$HOMEBREW_PREFIX/bin/"
+          cd -
         fi
 
-    - name: Set up Homebrew PATH
-      run: |
-        if [ "$RUNNER_OS" = "macOS" ]; then
-          echo "::add-path::/usr/local/bin:/usr/bin:/bin"
-        else
-          echo "::add-path::/home/linuxbrew/.linuxbrew/bin:/usr/bin:/bin"
-        fi
+        export PATH="$HOMEBREW_PREFIX/bin:$PATH"
+        echo "::add-path::$HOMEBREW_PREFIX/bin"
 
     - name: Run brew style
       run: brew style homebrew/formula-analytics
