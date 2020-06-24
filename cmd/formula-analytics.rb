@@ -303,7 +303,8 @@ module Homebrew
     when "10.13" then "macOS High Sierra (10.13)"
     when "10.14" then "macOS Mojave (10.14)"
     when "10.15" then "macOS Catalina (10.15)"
-    when /10\.\d+/ then "macOS (#{dimension})"
+    when "10.16", "11.0" then "macOS Big Sur (#{dimension})"
+    when /\d+\.\d+/ then "macOS (#{dimension})"
     when "" then "Unknown"
     else dimension
     end
