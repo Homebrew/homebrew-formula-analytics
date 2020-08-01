@@ -48,7 +48,7 @@ module Homebrew
   FIRST_ANALYTICS_DATE = Date.parse("21 Apr 2016").freeze
 
   def formula_analytics
-    formula_analytics_args.parse
+    args = formula_analytics_args.parse
 
     # Configure RubyGems.
     require "rubygems"
@@ -73,7 +73,7 @@ module Homebrew
     include Google::Apis::AnalyticsreportingV4
     include Google::Auth
 
-    analytics_view_id = if Homebrew.args.linux?
+    analytics_view_id = if args.linux?
       ANALYTICS_VIEW_ID_LINUX
     else
       ANALYTICS_VIEW_ID_MACOS
@@ -82,7 +82,7 @@ module Homebrew
     # https://www.rubydoc.info/github/google/google-api-ruby-client/Google/Apis/AnalyticsreportingV4/AnalyticsReportingService
     analytics_reporting_service = AnalyticsReportingService.new
 
-    return if Homebrew.args.setup?
+    return if args.setup?
 
     odie "No Google Analytics credentials found at #{CREDENTIALS_PATH}!" unless File.exist? CREDENTIALS_PATH
 
@@ -98,23 +98,23 @@ module Homebrew
     analytics_reporting_service.authorization = credentials
 
     max_days_ago = (Date.today - FIRST_ANALYTICS_DATE).to_i
-    days_ago = (Homebrew.args.days_ago || 30).to_i
+    days_ago = (args.days_ago || 30).to_i
     if days_ago > max_days_ago
       opoo "Analytics started #{FIRST_ANALYTICS_DATE}. `--days-ago` set to maximum value."
       days_ago = max_days_ago
     end
 
-    json_output = Homebrew.args.json?
-    os_version = Homebrew.args.os_version?
-    all_core_formulae_json = Homebrew.args.all_core_formulae_json?
+    json_output = args.json?
+    os_version = args.os_version?
+    all_core_formulae_json = args.all_core_formulae_json?
     json_output ||= all_core_formulae_json
     odie "Only JSON output is now supported!" unless json_output
 
     categories = []
-    categories << :install if Homebrew.args.install?
-    categories << :cask_install if Homebrew.args.cask_install?
-    categories << :install_on_request if Homebrew.args.install_on_request?
-    categories << :BuildError if Homebrew.args.build_error?
+    categories << :install if args.install?
+    categories << :cask_install if args.cask_install?
+    categories << :install_on_request if args.install_on_request?
+    categories << :BuildError if args.build_error?
     categories += [:install] if categories.empty?
 
     report_requests = []
