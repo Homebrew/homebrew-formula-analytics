@@ -13,33 +13,30 @@ jobs:
     - name: Set up Git repository
       uses: actions/checkout@master
 
+    - name: Set up Ruby
+      if: matrix.os == 'ubuntu-latest'
+      uses: actions/setup-ruby@master
+      with:
+        ruby-version: '2.6'
+
     - name: Set up Homebrew
-      run: |
-        if which brew &>/dev/null; then
-          HOMEBREW_PREFIX="$(brew --prefix)"
-          HOMEBREW_REPOSITORY="$HOMEBREW_PREFIX/Homebrew"
-          brew update-reset "$HOMEBREW_REPOSITORY"
-          ln -s "$PWD" "$HOMEBREW_REPOSITORY/Library/Taps/homebrew/homebrew-formula-analytics"
-        else
-          HOMEBREW_PREFIX=/home/linuxbrew/.linuxbrew
-          HOMEBREW_REPOSITORY="$HOMEBREW_PREFIX/Homebrew"
-          sudo mkdir -p $HOMEBREW_PREFIX
-          sudo git clone --depth=1 https://github.com/Homebrew/brew "$HOMEBREW_REPOSITORY"
+      id: set-up-homebrew
+      uses: Homebrew/actions/setup-homebrew@master
 
-          sudo mkdir -p "$HOMEBREW_REPOSITORY/Library/Taps/homebrew"
-          sudo ln -s "$PWD" "$HOMEBREW_REPOSITORY/Library/Taps/homebrew/homebrew-formula-analytics"
+    - name: Cache Homebrew Bundler RubyGems
+      id: cache
+      uses: actions/cache@master
+      with:
+        path: ${{ steps.set-up-homebrew.outputs.gems-path }}
+        key: ${{ runner.os }}-rubygems-${{ steps.set-up-homebrew.outputs.gems-hash }}
+        restore-keys: ${{ runner.os }}-rubygems-
 
-          cd "$HOMEBREW_PREFIX"
-          sudo mkdir -p bin etc include lib opt sbin share var/homebrew/linked Cellar
-          sudo ln -sf ../Homebrew/bin/brew "$HOMEBREW_PREFIX/bin/"
-          cd -
-        fi
+    - name: Install Homebrew Bundler RubyGems
+      if: steps.cache.outputs.cache-hit != 'true'
+      run: brew install-bundler-gems
 
-        export PATH="$HOMEBREW_PREFIX/bin:$PATH"
-        echo "::add-path::$HOMEBREW_PREFIX/bin"
-
-    - name: Run brew style
-      run: brew style homebrew/formula-analytics
+    - name: Run brew test-bot --only-tap-syntax
+      run: brew test-bot --only-tap-syntax
 
     - name: Test formula-analytics setup
       run: brew formula-analytics --setup
