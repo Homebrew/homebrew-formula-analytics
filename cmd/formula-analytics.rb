@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require "cli/parser"
 
 module Homebrew
@@ -39,12 +41,12 @@ module Homebrew
   end
 
   REPO_ROOT = Pathname.new("#{File.dirname(__FILE__)}/..").freeze
-  VENDOR_RUBY = "#{REPO_ROOT}/vendor/ruby".freeze
+  VENDOR_RUBY = "#{REPO_ROOT}/vendor/ruby"
   BUNDLER_SETUP = Pathname.new("#{VENDOR_RUBY}/bundler/setup.rb").freeze
-  API_SCOPE = "https://www.googleapis.com/auth/analytics.readonly".freeze
-  ANALYTICS_VIEW_ID_LINUX = "120391035".freeze
-  ANALYTICS_VIEW_ID_MACOS = "120682403".freeze
-  CREDENTIALS_PATH = "#{ENV["HOME"]}/.homebrew_analytics.json".freeze
+  API_SCOPE = "https://www.googleapis.com/auth/analytics.readonly"
+  ANALYTICS_VIEW_ID_LINUX = "120391035"
+  ANALYTICS_VIEW_ID_MACOS = "120682403"
+  CREDENTIALS_PATH = "#{ENV["HOME"]}/.homebrew_analytics.json"
   FIRST_ANALYTICS_DATE = Date.parse("21 Apr 2016").freeze
 
   def formula_analytics
