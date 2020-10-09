@@ -16,7 +16,7 @@ GEM
       retriable (>= 2.0, < 4.0)
       rexml
       signet (~> 0.12)
-    googleauth (0.13.1)
+    googleauth (0.14.0)
       faraday (>= 0.17.3, < 2.0)
       jwt (>= 1.4, < 3.0)
       memoist (~> 0.16)
