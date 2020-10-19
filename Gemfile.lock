@@ -5,8 +5,9 @@ GEM
       public_suffix (>= 2.0.2, < 5.0)
     declarative (0.0.20)
     declarative-option (0.1.0)
-    faraday (1.0.1)
+    faraday (1.1.0)
       multipart-post (>= 1.2, < 3)
+      ruby2_keywords
     google-api-client (0.46.1)
       addressable (~> 2.5, >= 2.5.1)
       googleauth (~> 0.9)
@@ -37,6 +38,7 @@ GEM
       uber (< 0.2.0)
     retriable (3.1.2)
     rexml (3.2.4)
+    ruby2_keywords (0.0.2)
     signet (0.14.0)
       addressable (~> 2.3)
       faraday (>= 0.17.3, < 2.0)
