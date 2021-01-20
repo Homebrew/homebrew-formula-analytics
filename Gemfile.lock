@@ -9,7 +9,7 @@ GEM
       zeitwerk (~> 2.3)
     addressable (2.7.0)
       public_suffix (>= 2.0.2, < 5.0)
-    concurrent-ruby (1.1.7)
+    concurrent-ruby (1.1.8)
     declarative (0.0.20)
     declarative-option (0.1.0)
     faraday (1.3.0)
