@@ -36,7 +36,7 @@ module Homebrew
              description: "Read analytics from Homebrew on Linux's Google Analytics account."
       conflicts "--install", "--cask-install", "--install-on-request", "--build-error", "--os-version"
       conflicts "--json", "--all-core-formulae-json", "--setup"
-      max_named 0
+      named_args 0
     end
   end
 
@@ -106,11 +106,8 @@ module Homebrew
       days_ago = max_days_ago
     end
 
-    json_output = args.json?
     os_version = args.os_version?
     all_core_formulae_json = args.all_core_formulae_json?
-    json_output ||= all_core_formulae_json
-    odie "Only JSON output is now supported!" unless json_output
 
     categories = []
     categories << :install if args.install?
