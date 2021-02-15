@@ -2,4 +2,4 @@
 
 source "https://rubygems.org"
 
-gem "google-api-client"
+gem "google-apis-analyticsreporting_v4"
