@@ -271,7 +271,7 @@ module Homebrew
         end
       end
 
-      json[:formulae] = Hash[json[:formulae].sort_by { |name, _| name }] if all_core_formulae_json
+      json[:formulae] = json[:formulae].sort_by { |name, _| name }.to_h if all_core_formulae_json
 
       puts JSON.pretty_generate json
     end
