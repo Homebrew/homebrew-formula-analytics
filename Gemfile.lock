@@ -10,7 +10,7 @@ GEM
       multipart-post (>= 1.2, < 3)
       ruby2_keywords
     faraday-net_http (1.0.1)
-    google-apis-analyticsreporting_v4 (0.1.0)
+    google-apis-analyticsreporting_v4 (0.2.0)
       google-apis-core (~> 0.1)
     google-apis-core (0.3.0)
       addressable (~> 2.5, >= 2.5.1)
