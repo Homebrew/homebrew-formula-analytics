@@ -32,7 +32,7 @@ GEM
     httpclient (2.8.3)
     jwt (2.2.2)
     memoist (0.16.2)
-    mini_mime (1.0.3)
+    mini_mime (1.1.0)
     multi_json (1.15.0)
     multipart-post (2.1.1)
     os (1.1.1)
