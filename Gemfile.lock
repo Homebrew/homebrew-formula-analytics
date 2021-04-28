@@ -25,7 +25,7 @@ GEM
       rexml
       signet (~> 0.14)
       webrick
-    googleauth (0.16.1)
+    googleauth (0.16.2)
       faraday (>= 0.17.3, < 2.0)
       jwt (>= 1.4, < 3.0)
       memoist (~> 0.16)
