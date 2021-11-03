@@ -271,10 +271,56 @@ module Homebrew
         end
       end
 
-      json[:formulae] = json[:formulae].sort_by { |name, _| name }.to_h if all_core_formulae_json
+      if all_core_formulae_json
+        json[:formulae] = json[:formulae].sort_by { |name, _| name }.to_h
+      elsif os_version
+        # Hack up macOS versions into the format we want
+        new_items = {}
+        json[:items].each do |item|
+          item_os_version = if item[:os_version].include?("(10.16)")
+            "11"
+          else
+            item[:os_version][(/\d\d/)]
+          end
+          item[:count] = formatted_count_to_i(item[:count])
+          item[:percent] = item[:percent].to_f
+
+          if item_os_version.to_i < 11
+            new_items[item[:os_version]] = item
+            next
+          end
+
+          new_os_version = format_dimension(item_os_version, :os_version)
+          item[:os_version] = new_os_version
+
+          unless new_items.key?(new_os_version)
+            new_items[new_os_version] = item
+            next
+          end
+
+          new_item = new_items[new_os_version]
+          new_item[:count] += item.count
+          new_item[:percent] += item[:percent]
+        end
+        number = 0
+        json[:items] = new_items.values
+                                .sort_by { |item| -item[:count] }
+                                .map do |item|
+          number += 1
+          item[:number] = number
+          item[:count] = format_count(item[:count])
+          item[:percent] = format_percent(item[:percent])
+          item
+        end
+        json[:total_items] = number
+      end
 
       puts JSON.pretty_generate json
     end
+  end
+
+  def formatted_count_to_i(formatted_count)
+    formatted_count.tr(",", "").to_i
   end
 
   def format_count(count)
@@ -282,13 +328,13 @@ module Homebrew
   end
 
   def format_percent(percent)
-    format "%<percent>.2f", percent: percent
+    format("%<percent>.2f", percent: percent).gsub(/\.00$/, "")
   end
 
   def format_dimension(dimension, key)
     return dimension if key != :os_version
 
-    dimension.gsub!(/^Intel ?/, "")
+    dimension = dimension.gsub(/^Intel ?/, "")
     case dimension
     when "10.4" then "Mac OS X Tiger (10.4)"
     when "10.5" then "Mac OS X Leopard (10.5)"
@@ -302,8 +348,9 @@ module Homebrew
     when "10.13" then "macOS High Sierra (10.13)"
     when "10.14" then "macOS Mojave (10.14)"
     when "10.15" then "macOS Catalina (10.15)"
-    when "10.16", /^11\./ then "macOS Big Sur (#{dimension})"
-    when /\d+\.\d+/ then "macOS (#{dimension})"
+    when "10.16", /^11\.?/ then "macOS Big Sur (#{dimension})"
+    when /^12\.?/ then "macOS Monterey (#{dimension})"
+    when /\d+(\.\d+)?/ then "macOS (#{dimension})"
     when "" then "Unknown"
     else dimension
     end
