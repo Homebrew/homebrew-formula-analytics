@@ -36,7 +36,7 @@ module Homebrew
              description: "Read analytics from Homebrew on Linux's Google Analytics account."
       conflicts "--install", "--cask-install", "--install-on-request", "--build-error", "--os-version"
       conflicts "--json", "--all-core-formulae-json", "--setup"
-      named_args 0
+      named_args :none
     end
   end
 
