@@ -46,7 +46,7 @@ module Homebrew
   API_SCOPE = "https://www.googleapis.com/auth/analytics.readonly"
   ANALYTICS_VIEW_ID_LINUX = "120391035"
   ANALYTICS_VIEW_ID_MACOS = "120682403"
-  CREDENTIALS_PATH = "#{ENV["HOME"]}/.homebrew_analytics.json"
+  CREDENTIALS_PATH = "#{Dir.home}/.homebrew_analytics.json"
   FIRST_ANALYTICS_DATE = Date.parse("21 Apr 2016").freeze
 
   def formula_analytics
