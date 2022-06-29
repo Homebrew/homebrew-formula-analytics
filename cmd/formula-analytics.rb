@@ -15,7 +15,7 @@ module Homebrew
       flag   "--days-ago=",
              description: "Query from the specified days ago until the present. The default is 30 days."
       switch "--install",
-             description: "Show the number of specifically requested installations or installation as "\
+             description: "Show the number of specifically requested installations or installation as " \
                           "dependencies of the formula. This is the default."
       switch "--cask-install",
              description: "Show the number of installations of casks."
