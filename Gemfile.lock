@@ -7,7 +7,7 @@ GEM
     faraday (2.3.0)
       faraday-net_http (~> 2.0)
       ruby2_keywords (>= 0.0.4)
-    faraday-net_http (2.0.3)
+    faraday-net_http (2.1.0)
     google-apis-analyticsreporting_v4 (0.10.0)
       google-apis-core (>= 0.7, < 2.a)
     google-apis-core (0.7.0)
