@@ -32,7 +32,7 @@ GEM
     mini_mime (1.1.2)
     multi_json (1.15.0)
     os (1.1.4)
-    public_suffix (5.0.0)
+    public_suffix (5.0.1)
     representable (3.2.0)
       declarative (< 0.1.0)
       trailblazer-option (>= 0.1.1, < 0.2.0)
