@@ -47,7 +47,7 @@ GEM
       multi_json (~> 1.10)
     trailblazer-option (0.1.2)
     uber (0.1.0)
-    webrick (1.7.0)
+    webrick (1.8.1)
 
 PLATFORMS
   ruby
