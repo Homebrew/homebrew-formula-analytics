@@ -299,7 +299,7 @@ module Homebrew
           end
 
           new_item = new_items[new_os_version]
-          new_item[:count] += item.count
+          new_item[:count] += item[:count]
           new_item[:percent] += item[:percent]
         end
         number = 0
