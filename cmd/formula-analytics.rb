@@ -34,8 +34,12 @@ module Homebrew
              description: "Install the necessary gems, require them and exit without running a query."
       switch "--linux",
              description: "Read analytics from Homebrew on Linux's Google Analytics account."
+      switch "--influx", "--influxdb",
+             hidden:      true,
+             description: "Read analytics from InfluxDB instead of Google Analytics."
       conflicts "--install", "--cask-install", "--install-on-request", "--build-error", "--os-version"
       conflicts "--json", "--all-core-formulae-json", "--setup"
+      conflicts "--linux", "--influx"
       named_args :none
     end
   end
@@ -69,6 +73,15 @@ module Homebrew
     Gem::Specification.reset
 
     require_relative BUNDLER_SETUP
+
+    if args.influx?
+      influx_analytics(args)
+    else
+      google_analytics(args)
+    end
+  end
+
+  def google_analytics(args)
     require "google/apis/analyticsreporting_v4"
     require "googleauth"
 
@@ -317,6 +330,32 @@ module Homebrew
 
       puts JSON.pretty_generate json
     end
+  end
+
+  def influx_analytics(args)
+    require "utils/analytics"
+    require "influxdb-client"
+
+    token = if args.setup?
+      Utils::Analytics::INFLUX_TOKEN
+    else
+      ENV.fetch("HOMEBREW_INFLUXDB_TOKEN", nil)
+    end
+
+    influxdb_client = InfluxDB2::Client.new(
+      Utils::Analytics::INFLUX_HOST,
+      token,
+      bucket: Utils::Analytics::INFLUX_BUCKET,
+      org:    Utils::Analytics::INFLUX_ORG,
+    )
+
+    return if args.setup?
+
+    odie "HOMEBREW_NO_ANALYTICS is set!" if ENV["HOMEBREW_NO_ANALYTICS"]
+
+    odie "No InfluxDB credentials found in HOMEBREW_INFLUXDB_TOKEN!" unless ENV["HOMEBREW_INFLUXDB_TOKEN"]
+
+    puts "TODO: use client: #{influxdb_client}"
   end
 
   def formatted_count_to_i(formatted_count)
