@@ -355,7 +355,59 @@ module Homebrew
 
     odie "No InfluxDB credentials found in HOMEBREW_INFLUXDB_TOKEN!" unless ENV["HOMEBREW_INFLUXDB_TOKEN"]
 
-    puts "TODO: use client: #{influxdb_client}"
+    # TODO: attempt to strip out the date and ideally index columns
+    # TODO: attempt to sort on server-side
+    # TODO: handle other dimensions
+    query = <<~EOS
+      from(bucket: "analytics")
+        |> range(start: -31d, stop: now())
+        |> filter(fn: (r) => r["_measurement"] == "formula_install")
+        |> group(columns: ["package_and_options"])
+        |> sum()
+    EOS
+    result = influxdb_client.create_query_api.query_raw(query: query)
+    # remove datatype, group, empty, column name lines
+    lines = result.lines.drop(4)
+    json = {
+      category:    :formula_install,
+      total_items: 0,
+      start_date:  nil,
+      end_date:    nil,
+      total_count: 0,
+      items:       [],
+    }
+
+    lines.each do |line|
+      _, _, _index, start_date, end_date, count, name = line.split(",")
+      next if name.blank?
+
+      count = count.to_i
+
+      json[:total_items] += 1
+      json[:start_date] ||= DateTime.parse(start_date)
+      json[:end_date] ||= DateTime.parse(end_date)
+      json[:total_count] += count
+
+      json[:items] << {
+        number:  nil,
+        # TODO: handle other dimensions
+        formula: name.chomp,
+        count:   count,
+      }
+    end
+
+    json[:items].sort_by! do |item|
+      -item[:count]
+    end
+
+    json[:items].each_with_index do |item, index|
+      item[:number] = index + 1
+
+      percent = (item[:count].to_f / json[:total_count]) * 100
+      item[:percent] = format_percent(percent)
+    end
+
+    puts JSON.pretty_generate json
   end
 
   def formatted_count_to_i(formatted_count)
