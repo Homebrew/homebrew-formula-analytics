@@ -121,6 +121,7 @@ module Homebrew
 
         DAYS.each do |days|
           next if days != "30" && category_name == "build-error" && !data_source.nil?
+
           args = %W[--days-ago=#{days}]
           args << "--influxdb" if days == "30"
 
