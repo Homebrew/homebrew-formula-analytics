@@ -355,59 +355,75 @@ module Homebrew
 
     odie "No InfluxDB credentials found in HOMEBREW_INFLUXDB_TOKEN!" unless ENV["HOMEBREW_INFLUXDB_TOKEN"]
 
-    # TODO: attempt to strip out the date and ideally index columns
-    # TODO: attempt to sort on server-side
-    # TODO: handle other dimensions
-    query = <<~EOS
-      from(bucket: "analytics")
-        |> range(start: -31d, stop: now())
-        |> filter(fn: (r) => r["_measurement"] == "formula_install")
-        |> group(columns: ["package_and_options"])
-        |> sum()
-    EOS
-    result = influxdb_client.create_query_api.query_raw(query: query)
-    # remove datatype, group, empty, column name lines
-    lines = result.lines.drop(4)
-    json = {
-      category:    :formula_install,
-      total_items: 0,
-      start_date:  nil,
-      end_date:    nil,
-      total_count: 0,
-      items:       [],
-    }
+    days_ago = (args.days_ago || 30).to_i
+    if days_ago > 365
+      opoo "Analytics only retained for 1 year `--days-ago` set to maximum value."
+      days_ago = 365
+    end
 
-    lines.each do |line|
-      _, _, _index, start_date, end_date, count, name = line.split(",")
-      next if name.blank?
+    categories = []
+    categories << :formula_install if args.install?
+    categories << :cask_install if args.cask_install?
+    categories << :build_error if args.build_error?
+    categories << :os_versions if args.os_version?
 
-      count = count.to_i
+    field = "package"
+    tag = "pkg"
 
-      json[:total_items] += 1
-      json[:start_date] ||= DateTime.parse(start_date)
-      json[:end_date] ||= DateTime.parse(end_date)
-      json[:total_count] += count
-
-      json[:items] << {
-        number:  nil,
-        # TODO: handle other dimensions
-        formula: name.chomp,
-        count:   count,
+    # TODO: handle on_request and OS version dimensions
+    categories.each do |category|
+      field = "os_name_and_version" if category == :os_versions
+      tag = "os" if category == :os_versions
+      query = <<~EOS
+        from(bucket: "analytics_downsampled")
+          |> range(start: -#{days_ago}d, stop: now())
+          |> filter(fn: (r) => r._measurement == "#{category}" and r._field == "#{field}")
+          |> group(columns: ["#{tag}"])
+          |> sum()
+          |> keep(columns: ["#{tag}", "_value"])
+      EOS
+      result = influxdb_client.create_query_api.query_raw(query: query)
+      # remove datatype, group, empty, column name lines
+      lines = result.lines.drop(4)
+      json = {
+        category:    category,
+        total_items: 0,
+        start_date:  Date.today - days_ago.to_i,
+        end_date:    Date.today,
+        total_count: 0,
+        items:       [],
       }
+
+      lines.each do |line|
+        _, _, _index, count, name = line.split(",")
+        next if name.blank?
+
+        count = count.to_i
+
+        json[:total_items] += 1
+        json[:total_count] += count
+
+        json[:items] << {
+          number:  nil,
+          # TODO: handle other dimensions
+          formula: name.chomp,
+          count:   count,
+        }
+      end
+
+      json[:items].sort_by! do |item|
+        -item[:count]
+      end
+
+      json[:items].each_with_index do |item, index|
+        item[:number] = index + 1
+
+        percent = (item[:count].to_f / json[:total_count]) * 100
+        item[:percent] = format_percent(percent)
+      end
+
+      puts JSON.pretty_generate json
     end
-
-    json[:items].sort_by! do |item|
-      -item[:count]
-    end
-
-    json[:items].each_with_index do |item, index|
-      item[:number] = index + 1
-
-      percent = (item[:count].to_f / json[:total_count]) * 100
-      item[:percent] = format_percent(percent)
-    end
-
-    puts JSON.pretty_generate json
   end
 
   def formatted_count_to_i(formatted_count)
