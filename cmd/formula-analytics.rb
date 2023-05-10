@@ -357,7 +357,7 @@ module Homebrew
 
     days_ago = (args.days_ago || 30).to_i
     if days_ago > 365
-      opoo "Analytics only retained for 1 year `--days-ago` set to maximum value."
+      opoo "Analytics are only retained for 1 year, setting `--days-ago=365`."
       days_ago = 365
     end
 
