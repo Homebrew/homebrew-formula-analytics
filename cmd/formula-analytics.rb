@@ -363,27 +363,29 @@ module Homebrew
 
     categories = []
     categories << :formula_install if args.install?
+    categories << :formula_install_on_request if args.install_on_request?
     categories << :cask_install if args.cask_install?
     categories << :build_error if args.build_error?
     categories << :os_versions if args.os_version?
 
-    field = "package"
-    tag = "pkg"
-
-    # TODO: handle on_request and OS version dimensions
     categories.each do |category|
-      field = "os_name_and_version" if category == :os_versions
-      tag = "os" if category == :os_versions
+      if category == :os_versions
+        field = "os_name_and_version"
+        tag = "os"
+      else
+        field = "package"
+        tag = "pkg"
+      end
+
+      #TODO: Setup tap filtering if needed
       query = <<~EOS
         from(bucket: "analytics_downsampled")
           |> range(start: -#{days_ago}d, stop: now())
           |> filter(fn: (r) => r._measurement == "#{category}" and r._field == "#{field}")
           |> group(columns: ["#{tag}"])
-          |> sum()
-          |> keep(columns: ["#{tag}", "_value"])
+          |> sum(column: "_value")
       EOS
       result = influxdb_client.create_query_api.query_raw(query: query)
-      # remove datatype, group, empty, column name lines
       lines = result.lines.drop(4)
       json = {
         category:    category,
@@ -395,7 +397,7 @@ module Homebrew
       }
 
       lines.each do |line|
-        _, _, _index, count, name = line.split(",")
+        _, _, _index, _start, _end, count, name = line.split(",")
         next if name.blank?
 
         count = count.to_i
@@ -405,7 +407,6 @@ module Homebrew
 
         json[:items] << {
           number:  nil,
-          # TODO: handle other dimensions
           formula: name.chomp,
           count:   count,
         }
