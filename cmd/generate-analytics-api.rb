@@ -117,13 +117,16 @@ module Homebrew
         # so only set it if we've not already set
         # `--all-core-formulae-json`.
         formula_analytics_args << "--json" unless formula_analytics_args.include? "--all-core-formulae-json"
-        formula_analytics_args << "--linux" if os == :linux
 
         DAYS.each do |days|
           next if days != "30" && category_name == "build-error" && !data_source.nil?
 
           args = %W[--days-ago=#{days}]
-          args << "--influxdb" if days == "30"
+          if days == "30"
+            args << "--influxdb"
+          elsif os == :linux
+            args << "--linux"
+          end
 
           output = run_formula_analytics(*formula_analytics_args, *args)
           (analytics_data_path/"#{days}d.json").write output
