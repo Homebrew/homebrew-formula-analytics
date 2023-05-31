@@ -361,6 +361,8 @@ module Homebrew
       days_ago = 365
     end
 
+    all_core_formulae_json = args.all_core_formulae_json?
+
     categories = []
     categories << :formula_install if args.install?
     categories << :formula_install_on_request if args.install_on_request?
@@ -377,7 +379,7 @@ module Homebrew
         tag = "pkg"
       end
 
-      #TODO: Setup tap filtering if needed
+      # TODO: need tap information for filtering and display full names
       query = <<~EOS
         from(bucket: "analytics_downsampled")
           |> range(start: -#{days_ago}d, stop: now())
@@ -396,9 +398,19 @@ module Homebrew
         items:       [],
       }
 
+      dimension_key = if args.os_version?
+        :os_version
+      elsif categories.include?(:cask_install)
+        :cask
+      else
+        :formula
+      end
+
       lines.each do |line|
         _, _, _index, _start, _end, count, name = line.split(",")
         next if name.blank?
+
+        dimension = format_dimension(name, dimension_key)
 
         count = count.to_i
 
@@ -406,21 +418,54 @@ module Homebrew
         json[:total_count] += count
 
         json[:items] << {
-          number:  nil,
-          formula: name.chomp,
-          count:   count,
+          number: nil,
+          dimension_key => dimension,
+          count: count,
         }
       end
 
-      json[:items].sort_by! do |item|
-        -item[:count]
+      # Combine identical OS versions
+      if category == :os_versions
+        os_version_items = {}
+
+        json[:items].each do |item|
+          os_version_name = item[dimension_key]
+          if os_version_items.key?(os_version_name)
+            os_version_items[os_version_name][:count] += item[:count]
+          else
+            os_version_items[os_version_name] = item
+          end
+        end
+
+        json[:items] = os_version_items.values
       end
 
-      json[:items].each_with_index do |item, index|
-        item[:number] = index + 1
+      if all_core_formulae_json
+        core_formula_items = {}
 
-        percent = (item[:count].to_f / json[:total_count]) * 100
-        item[:percent] = format_percent(percent)
+        json[:items].each do |item|
+          item.delete(:number)
+          item[:count] = format_count(item[:count])
+
+          formula_name = item[dimension_key]
+          core_formula_items[formula_name] ||= []
+          core_formula_items[formula_name] << item
+        end
+
+        json.delete(:items)
+        json[:formulae] = core_formula_items.sort_by { |name, _| name }.to_h
+      else
+        json[:items].sort_by! do |item|
+          -item[:count]
+        end
+
+        json[:items].each_with_index do |item, index|
+          item[:number] = index + 1
+
+          percent = (item[:count].to_f / json[:total_count]) * 100
+          item[:percent] = format_percent(percent)
+          item[:count] = format_count(item[:count])
+        end
       end
 
       puts JSON.pretty_generate json
@@ -440,9 +485,11 @@ module Homebrew
   end
 
   def format_dimension(dimension, key)
+    dimension = dimension.chomp
     return dimension if key != :os_version
 
     dimension = dimension.gsub(/^Intel ?/, "")
+                         .gsub(/^macOS ?/, "")
     case dimension
     when "10.4" then "Mac OS X Tiger (10.4)"
     when "10.5" then "Mac OS X Leopard (10.5)"
@@ -451,16 +498,15 @@ module Homebrew
     when "10.8" then "OS X Mountain Lion (10.8)"
     when "10.9" then "OS X Mavericks (10.9)"
     when "10.10" then "OS X Yosemite (10.10)"
-    when "10.11" then "OS X El Capitan (10.11)"
-    when "10.12" then "macOS Sierra (10.12)"
-    when "10.13" then "macOS High Sierra (10.13)"
-    when "10.14" then "macOS Mojave (10.14)"
-    when "10.15" then "macOS Catalina (10.15)"
-    when "10.16", /^11\.?/ then "macOS Big Sur (#{dimension})"
-    when /^12\.?/ then "macOS Monterey (#{dimension})"
-    when /^13\.?/ then "macOS Ventura (#{dimension})"
-    when /\d+(\.\d+)?/ then "macOS (#{dimension})"
-    when "" then "Unknown"
+    when "10.11", /^10\.11\.?/ then "OS X El Capitan (10.11)"
+    when "10.12", /^10\.12\.?/ then "macOS Sierra (10.12)"
+    when "10.13", /^10\.13\.?/ then "macOS High Sierra (10.13)"
+    when "10.14", /^10\.14\.?/ then "macOS Mojave (10.14)"
+    when "10.15", /^10\.15\.?/ then "macOS Catalina (10.15)"
+    when "10.16", /^11\.?/ then "macOS Big Sur (11)"
+    when /^12\.?/ then "macOS Monterey (12)"
+    when /^13\.?/ then "macOS Ventura (13)"
+    when /Ubuntu(-Server)? (\d+\.\d+).\d ?(LTS)?/ then "Ubuntu #{Regexp.last_match(2)} #{Regexp.last_match(3)}".strip
     else dimension
     end
   end
