@@ -506,6 +506,7 @@ module Homebrew
     when "10.16", /^11\.?/ then "macOS Big Sur (11)"
     when /^12\.?/ then "macOS Monterey (12)"
     when /^13\.?/ then "macOS Ventura (13)"
+    when /^14\.?/ then "macOS Sonoma (14)"
     when /Ubuntu(-Server)? (\d+\.\d+).\d ?(LTS)?/ then "Ubuntu #{Regexp.last_match(2)} #{Regexp.last_match(3)}".strip
     else dimension
     end
