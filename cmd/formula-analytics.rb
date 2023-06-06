@@ -387,7 +387,7 @@ module Homebrew
           |> group(columns: ["#{tag}"])
           |> sum(column: "_value")
       EOS
-      result = influxdb_client.create_query_api.query_raw(query: query)
+      result = influxdb_client.create_query_api.query_raw(query: query).force_encoding("UTF-8")
       lines = result.lines.drop(4)
       json = {
         category:    category,
