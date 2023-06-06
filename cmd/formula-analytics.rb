@@ -59,9 +59,8 @@ module Homebrew
     # Configure RubyGems.
     require "rubygems"
 
-    unless BUNDLER_SETUP.exist?
-      Homebrew.install_bundler!
-
+    Homebrew.install_bundler!
+    if !BUNDLER_SETUP.exist? || !quiet_system("bundle", "check", "--path", "vendor/ruby")
       REPO_ROOT.cd do
         safe_system "bundle", "install", "--standalone", "--path", "vendor/ruby"
       end
