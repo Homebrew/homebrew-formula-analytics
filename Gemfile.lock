@@ -28,7 +28,7 @@ GEM
       signet (>= 0.16, < 2.a)
     httpclient (2.8.3)
     influxdb-client (2.9.0)
-    jwt (2.7.0)
+    jwt (2.7.1)
     memoist (0.16.2)
     mini_mime (1.1.2)
     multi_json (1.15.0)
