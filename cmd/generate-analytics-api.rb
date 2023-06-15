@@ -121,13 +121,7 @@ module Homebrew
         DAYS.each do |days|
           next if days != "30" && category_name == "build-error" && !data_source.nil?
 
-          args = %W[--days-ago=#{days}]
-          if days == "30"
-            args << "--influxdb"
-          elsif os == :linux
-            args << "--linux"
-          end
-
+          args = %W[--influxdb --days-ago=#{days}]
           output = run_formula_analytics(*formula_analytics_args, *args)
           (analytics_data_path/"#{days}d.json").write output
           (analytics_api_path/"#{days}d.json").write analytics_json_template(category_name, data_source: data_source)
