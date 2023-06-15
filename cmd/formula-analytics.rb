@@ -24,7 +24,19 @@ module Homebrew
       switch "--build-error",
              description: "Show the number of build errors for the formulae."
       switch "--os-version",
-             description: "Output OS versions rather than formulae names."
+             description: "Output OS versions."
+      switch "--homebrew-devcmdrun_developer",
+             depends_on:  "--influx",
+             description: "Output devcmdrun/HOMEBREW_DEVELOPER."
+      switch "--homebrew-os-arch-ci",
+             depends_on:  "--influx",
+             description: "Output OS/Architecture/CI."
+      switch "--homebrew-prefixes",
+             depends_on:  "--influx",
+             description: "Output Homebrew prefixes."
+      switch "--homebrew-versions",
+             depends_on:  "--influx",
+             description: "Output Homebrew versions."
       switch "--json",
              description: "Output JSON. This is required: plain text support has been removed."
       switch "--all-core-formulae-json",
@@ -51,7 +63,8 @@ module Homebrew
   ANALYTICS_VIEW_ID_LINUX = "120391035"
   ANALYTICS_VIEW_ID_MACOS = "120682403"
   CREDENTIALS_PATH = "#{Dir.home}/.homebrew_analytics.json"
-  FIRST_ANALYTICS_DATE = Date.parse("21 Apr 2016").freeze
+  FIRST_GOOGLE_ANALYTICS_DATE = Date.new(2016, 04, 21).freeze
+  FIRST_INFLUXDB_ANALYTICS_DATE = Date.new(2023, 03, 27).freeze
 
   def formula_analytics
     args = formula_analytics_args.parse
@@ -111,10 +124,10 @@ module Homebrew
     )
     analytics_reporting_service.authorization = credentials
 
-    max_days_ago = (Date.today - FIRST_ANALYTICS_DATE).to_i
+    max_days_ago = (Date.today - FIRST_GOOGLE_ANALYTICS_DATE).to_i
     days_ago = (args.days_ago || 30).to_i
     if days_ago > max_days_ago
-      opoo "Analytics started #{FIRST_ANALYTICS_DATE}. `--days-ago` set to maximum value."
+      opoo "Analytics started #{FIRST_GOOGLE_ANALYTICS_DATE}. `--days-ago` set to maximum value."
       days_ago = max_days_ago
     end
 
@@ -354,7 +367,12 @@ module Homebrew
 
     odie "No InfluxDB credentials found in HOMEBREW_INFLUXDB_TOKEN!" unless ENV["HOMEBREW_INFLUXDB_TOKEN"]
 
+    max_days_ago = (Date.today - FIRST_INFLUXDB_ANALYTICS_DATE).to_i
     days_ago = (args.days_ago || 30).to_i
+    if days_ago > max_days_ago
+      opoo "Analytics started #{FIRST_INFLUXDB_ANALYTICS_DATE}. `--days-ago` set to maximum value."
+      days_ago = max_days_ago
+    end
     if days_ago > 365
       opoo "Analytics are only retained for 1 year, setting `--days-ago=365`."
       days_ago = 365
@@ -363,24 +381,42 @@ module Homebrew
     all_core_formulae_json = args.all_core_formulae_json?
 
     categories = []
+    categories << :build_error if args.build_error?
+    categories << :cask_install if args.cask_install?
     categories << :formula_install if args.install?
     categories << :formula_install_on_request if args.install_on_request?
-    categories << :cask_install if args.cask_install?
-    categories << :build_error if args.build_error?
+    categories << :homebrew_devcmdrun_developer if args.homebrew_devcmdrun_developer?
+    categories << :homebrew_os_arch_ci if args.homebrew_os_arch_ci?
+    categories << :homebrew_prefixes if args.homebrew_prefixes?
+    categories << :homebrew_versions if args.homebrew_versions?
     categories << :os_versions if args.os_version?
 
     categories.each do |category|
-      if category == :os_versions
+      case category
+      when :homebrew_devcmdrun_developer
+        dimension_key = field = tag = "devcmdrun_developer"
+      when :homebrew_os_arch_ci
+        dimension_key = field = tag = "os_arch_ci"
+      when :homebrew_prefixes
+        dimension_key = field = tag = "prefix"
+      when :homebrew_versions
+        dimension_key = field = tag = "version"
+      when :os_versions
+        dimension_key = :os_version
         field = "os_name_and_version"
         tag = "os"
       else
+        dimension_key = if category == :cask_install
+          :cask
+        else
+          :formula
+        end
         field = "package"
         tag = "pkg"
       end
 
-      # TODO: need tap information for filtering and display full names
       query = <<~EOS
-        from(bucket: "analytics_downsampled")
+        from(bucket: "analytics_counts")
           |> range(start: -#{days_ago}d, stop: now())
           |> filter(fn: (r) => r._measurement == "#{category}" and r._field == "#{field}")
           |> group(columns: ["#{tag}"])
@@ -396,14 +432,6 @@ module Homebrew
         total_count: 0,
         items:       [],
       }
-
-      dimension_key = if args.os_version?
-        :os_version
-      elsif categories.include?(:cask_install)
-        :cask
-      else
-        :formula
-      end
 
       lines.each do |line|
         _, _, _index, _start, _end, count, name = line.split(",")
