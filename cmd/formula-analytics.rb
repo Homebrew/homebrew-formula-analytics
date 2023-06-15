@@ -475,6 +475,8 @@ module Homebrew
           item[:count] = format_count(item[:count])
 
           formula_name = item[dimension_key]
+          next if formula_name.include?("/")
+
           core_formula_items[formula_name] ||= []
           core_formula_items[formula_name] << item
         end
