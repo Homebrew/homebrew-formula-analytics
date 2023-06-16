@@ -9,6 +9,8 @@ module Homebrew
     build-error install install-on-request
     core-build-error core-install core-install-on-request
     cask-install core-cask-install os-version
+    homebrew-devcmdrun-developer homebrew-os-arch-ci
+    homebrew-prefixes homebrew-versions
   ].freeze
   DAYS = %w[30 90 365].freeze
   MAX_RETRIES = 3
@@ -113,7 +115,7 @@ module Homebrew
       DAYS.each do |days|
         next if days != "30" && category_name == "build-error" && !data_source.nil?
 
-        args = %W[--influxdb --days-ago=#{days}]
+        args = %W[--days-ago=#{days}]
         output = run_formula_analytics(*formula_analytics_args, *args)
         (analytics_data_path/"#{days}d.json").write output
         (analytics_api_path/"#{days}d.json").write analytics_json_template(category_name, data_source: data_source)
