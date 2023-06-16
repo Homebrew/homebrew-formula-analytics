@@ -8,8 +8,8 @@ module Homebrew
   CATEGORIES = %w[
     build-error install install-on-request
     core-build-error core-install core-install-on-request
+    cask-install core-cask-install os-version
   ].freeze
-  MAC_ONLY_CATEGORIES = %w[cask-install core-cask-install os-version].freeze
   DAYS = %w[30 90 365].freeze
   MAX_RETRIES = 3
 
@@ -65,67 +65,58 @@ module Homebrew
     FileUtils.mkdir_p directories
 
     root_dir = Pathname.pwd
+    analytics_data_dir = root_dir/"_data/analytics"
+    analytics_api_dir = root_dir/"api/analytics"
 
-    [:mac, :linux].each do |os|
-      analytics_data_dir, analytics_api_dir = if os == :mac
-        [root_dir/"_data/analytics", root_dir/"api/analytics"]
+    CATEGORIES.each do |category|
+      formula_analytics_args = []
+
+      case category
+      when "core-build-error"
+        formula_analytics_args << "--all-core-formulae-json"
+        formula_analytics_args << "--build-error"
+        category_name = "build-error"
+        data_source = "homebrew-core"
+      when "core-install"
+        formula_analytics_args << "--all-core-formulae-json"
+        formula_analytics_args << "--install"
+        category_name = "install"
+        data_source = "homebrew-core"
+      when "core-install-on-request"
+        formula_analytics_args << "--all-core-formulae-json"
+        formula_analytics_args << "--install-on-request"
+        category_name = "install-on-request"
+        data_source = "homebrew-core"
+      when "core-cask-install"
+        formula_analytics_args << "--all-core-formulae-json"
+        formula_analytics_args << "--cask-install"
+        category_name = "cask-install"
+        data_source = "homebrew-cask"
       else
-        [root_dir/"_data/analytics-linux", root_dir/"api/analytics-linux"]
+        formula_analytics_args << "--#{category}"
+        category_name = category
       end
 
-      categories = CATEGORIES
-      categories += MAC_ONLY_CATEGORIES if os == :mac
+      path_suffix = File.join(category_name, data_source || "")
+      analytics_data_path = analytics_data_dir/path_suffix
+      analytics_api_path = analytics_api_dir/path_suffix
 
-      categories.each do |category|
-        formula_analytics_args = []
+      FileUtils.mkdir_p analytics_data_path
+      FileUtils.mkdir_p analytics_api_path
 
-        case category
-        when "core-build-error"
-          formula_analytics_args << "--all-core-formulae-json"
-          formula_analytics_args << "--build-error"
-          category_name = "build-error"
-          data_source = "homebrew-core"
-        when "core-install"
-          formula_analytics_args << "--all-core-formulae-json"
-          formula_analytics_args << "--install"
-          category_name = "install"
-          data_source = "homebrew-core"
-        when "core-install-on-request"
-          formula_analytics_args << "--all-core-formulae-json"
-          formula_analytics_args << "--install-on-request"
-          category_name = "install-on-request"
-          data_source = "homebrew-core"
-        when "core-cask-install"
-          formula_analytics_args << "--all-core-formulae-json"
-          formula_analytics_args << "--cask-install"
-          category_name = "cask-install"
-          data_source = "homebrew-cask"
-        else
-          formula_analytics_args << "--#{category}"
-          category_name = category
-        end
+      # The `--json` and `--all-core-formulae-json` flags are mutually
+      # exclusive, but we need to explicitly set `--json` sometimes,
+      # so only set it if we've not already set
+      # `--all-core-formulae-json`.
+      formula_analytics_args << "--json" unless formula_analytics_args.include? "--all-core-formulae-json"
 
-        path_suffix = File.join(category_name, data_source || "")
-        analytics_data_path = analytics_data_dir/path_suffix
-        analytics_api_path = analytics_api_dir/path_suffix
+      DAYS.each do |days|
+        next if days != "30" && category_name == "build-error" && !data_source.nil?
 
-        FileUtils.mkdir_p analytics_data_path
-        FileUtils.mkdir_p analytics_api_path
-
-        # The `--json` and `--all-core-formulae-json` flags are mutually
-        # exclusive, but we need to explicitly set `--json` sometimes,
-        # so only set it if we've not already set
-        # `--all-core-formulae-json`.
-        formula_analytics_args << "--json" unless formula_analytics_args.include? "--all-core-formulae-json"
-
-        DAYS.each do |days|
-          next if days != "30" && category_name == "build-error" && !data_source.nil?
-
-          args = %W[--influxdb --days-ago=#{days}]
-          output = run_formula_analytics(*formula_analytics_args, *args)
-          (analytics_data_path/"#{days}d.json").write output
-          (analytics_api_path/"#{days}d.json").write analytics_json_template(category_name, data_source: data_source)
-        end
+        args = %W[--influxdb --days-ago=#{days}]
+        output = run_formula_analytics(*formula_analytics_args, *args)
+        (analytics_data_path/"#{days}d.json").write output
+        (analytics_api_path/"#{days}d.json").write analytics_json_template(category_name, data_source: data_source)
       end
     end
   end
