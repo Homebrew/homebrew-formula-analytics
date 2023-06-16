@@ -10,32 +10,28 @@ module Homebrew
       usage_banner <<~EOS
         `formula-analytics`
 
-        Query Homebrew's anaytics for formula information. The top 10,000 formulae will be shown.
+        Query Homebrew's analytics.
       EOS
       flag   "--days-ago=",
              description: "Query from the specified days ago until the present. The default is 30 days."
       switch "--install",
-             description: "Show the number of specifically requested installations or installation as " \
+             description: "Output the number of specifically requested installations or installation as " \
                           "dependencies of the formula. This is the default."
       switch "--cask-install",
-             description: "Show the number of installations of casks."
+             description: "Output the number of installations of casks."
       switch "--install-on-request",
-             description: "Show the number of specifically requested installations of the formula."
+             description: "Output the number of specifically requested installations of the formula."
       switch "--build-error",
-             description: "Show the number of build errors for the formulae."
+             description: "Output the number of build errors for the formulae."
       switch "--os-version",
              description: "Output OS versions."
-      switch "--homebrew-devcmdrun_developer",
-             depends_on:  "--influx",
+      switch "--homebrew-devcmdrun-developer",
              description: "Output devcmdrun/HOMEBREW_DEVELOPER."
       switch "--homebrew-os-arch-ci",
-             depends_on:  "--influx",
              description: "Output OS/Architecture/CI."
       switch "--homebrew-prefixes",
-             depends_on:  "--influx",
              description: "Output Homebrew prefixes."
       switch "--homebrew-versions",
-             depends_on:  "--influx",
              description: "Output Homebrew versions."
       switch "--json",
              description: "Output JSON. This is required: plain text support has been removed."
@@ -44,14 +40,8 @@ module Homebrew
                           "Homebrew/homebrew-core formulae."
       switch "--setup",
              description: "Install the necessary gems, require them and exit without running a query."
-      switch "--linux",
-             description: "Read analytics from Homebrew on Linux's Google Analytics account."
-      switch "--influx", "--influxdb",
-             hidden:      true,
-             description: "Read analytics from InfluxDB instead of Google Analytics."
       conflicts "--install", "--cask-install", "--install-on-request", "--build-error", "--os-version"
       conflicts "--json", "--all-core-formulae-json", "--setup"
-      conflicts "--linux", "--influx"
       named_args :none
     end
   end
@@ -59,11 +49,6 @@ module Homebrew
   REPO_ROOT = Pathname.new("#{File.dirname(__FILE__)}/..").freeze
   VENDOR_RUBY = "#{REPO_ROOT}/vendor/ruby"
   BUNDLER_SETUP = Pathname.new("#{VENDOR_RUBY}/bundler/setup.rb").freeze
-  API_SCOPE = "https://www.googleapis.com/auth/analytics.readonly"
-  ANALYTICS_VIEW_ID_LINUX = "120391035"
-  ANALYTICS_VIEW_ID_MACOS = "120682403"
-  CREDENTIALS_PATH = "#{Dir.home}/.homebrew_analytics.json"
-  FIRST_GOOGLE_ANALYTICS_DATE = Date.new(2016, 04, 21).freeze
   FIRST_INFLUXDB_ANALYTICS_DATE = Date.new(2023, 03, 27).freeze
 
   def formula_analytics
@@ -86,262 +71,7 @@ module Homebrew
 
     require_relative BUNDLER_SETUP
 
-    if args.influx?
-      influx_analytics(args)
-    else
-      google_analytics(args)
-    end
-  end
-
-  def google_analytics(args)
-    require "google/apis/analyticsreporting_v4"
-    require "googleauth"
-
-    include Google::Apis::AnalyticsreportingV4
-    include Google::Auth
-
-    analytics_view_id = if args.linux?
-      ANALYTICS_VIEW_ID_LINUX
-    else
-      ANALYTICS_VIEW_ID_MACOS
-    end
-
-    # https://www.rubydoc.info/github/google/google-api-ruby-client/Google/Apis/AnalyticsreportingV4/AnalyticsReportingService
-    analytics_reporting_service = AnalyticsReportingService.new
-
-    return if args.setup?
-
-    odie "No Google Analytics credentials found at #{CREDENTIALS_PATH}!" unless File.exist? CREDENTIALS_PATH
-
-    odie "HOMEBREW_NO_ANALYTICS is set!" if ENV["HOMEBREW_NO_ANALYTICS"]
-
-    # Using a service account:
-    # https://developers.google.com/api-client-library/ruby/auth/service-accounts
-    credentials = ServiceAccountCredentials.make_creds(
-      # Need to pass an open file descriptor here
-      json_key_io: File.open(CREDENTIALS_PATH),
-      scope:       API_SCOPE,
-    )
-    analytics_reporting_service.authorization = credentials
-
-    max_days_ago = (Date.today - FIRST_GOOGLE_ANALYTICS_DATE).to_i
-    days_ago = (args.days_ago || 30).to_i
-    if days_ago > max_days_ago
-      opoo "Analytics started #{FIRST_GOOGLE_ANALYTICS_DATE}. `--days-ago` set to maximum value."
-      days_ago = max_days_ago
-    end
-
-    os_version = args.os_version?
-    all_core_formulae_json = args.all_core_formulae_json?
-
-    categories = []
-    categories << :install if args.install?
-    categories << :cask_install if args.cask_install?
-    categories << :install_on_request if args.install_on_request?
-    categories << :BuildError if args.build_error?
-    categories += [:install] if categories.empty?
-
-    report_requests = []
-
-    categories.each do |category|
-      dimension_filter_clauses = [
-        DimensionFilterClause.new(
-          filters: [
-            DimensionFilter.new(
-              dimension_name: "ga:eventCategory",
-              expressions:    [category],
-              operator:       "EXACT",
-            ),
-          ],
-        ),
-      ]
-
-      if all_core_formulae_json
-        dimension_filter_clauses << DimensionFilterClause.new(
-          operator: "OR",
-          filters:  [
-            DimensionFilter.new(
-              dimension_name: "ga:eventAction",
-              expressions:    ["/"],
-              operator:       "PARTIAL",
-              not:            true,
-            ),
-          ],
-        )
-      end
-
-      dimension = if os_version
-        dimension_filter_clauses << DimensionFilterClause.new(
-          operator: "AND",
-          filters:  [
-            DimensionFilter.new(
-              dimension_name: "ga:operatingSystemVersion",
-              not:            true,
-              expressions:    ["Intel"],
-              operator:       "EXACT",
-            ),
-            DimensionFilter.new(
-              dimension_name: "ga:operatingSystemVersion",
-              not:            true,
-              expressions:    ["Intel 10.90"],
-              operator:       "EXACT",
-            ),
-            DimensionFilter.new(
-              dimension_name: "ga:operatingSystemVersion",
-              not:            true,
-              expressions:    ["(not set)"],
-              operator:       "EXACT",
-            ),
-          ],
-        )
-        Dimension.new name: "ga:operatingSystemVersion"
-      else
-        Dimension.new name: "ga:eventAction"
-      end
-      metric = Metric.new expression: "ga:totalEvents"
-      order_by = OrderBy.new field_name: "ga:totalEvents",
-                             sort_order: "DESCENDING"
-      date_range = DateRange.new start_date: "#{days_ago}daysAgo",
-                                 end_date:   "today"
-
-      # https://www.rubydoc.info/github/google/google-api-ruby-client/Google/Apis/AnalyticsreportingV4/ReportRequest
-      report_requests << ReportRequest.new(
-        view_id:                  analytics_view_id,
-        dimensions:               [dimension],
-        metrics:                  [metric],
-        order_bys:                [order_by],
-        date_ranges:              [date_range],
-        dimension_filter_clauses: dimension_filter_clauses,
-        page_size:                10_000,
-        sampling_level:           :LARGE,
-      )
-    end
-
-    reports = []
-
-    get_reports_request = GetReportsRequest.new
-    report_requests.each_slice(50) do |report_requests_slice|
-      # batch multiple HTTP calls into a single request
-      # https://developers.google.com/api-client-library/ruby/guide/batch
-      analytics_reporting_service.batch do |service|
-        # batch reporting API will only allow 5 requests at a time
-        report_requests_slice.each_slice(5) do |rr|
-          get_reports_request.report_requests = rr
-          service.batch_get_reports(
-            get_reports_request,
-          ) do |response, error|
-            raise error if error
-
-            reports += response.reports
-          end
-        end
-      end
-    end
-
-    dimension_key = if os_version
-      :os_version
-    elsif categories.include?(:cask_install)
-      :cask
-    else
-      :formula
-    end
-
-    reports.each_with_index do |report, index|
-      first_report = index.zero?
-      puts unless first_report
-
-      category = if categories.length > 1
-        categories.at index
-      else
-        categories.first
-      end
-
-      row_count = report.data.row_count.to_i
-      if row_count.zero?
-        onoe "No #{category} data found!"
-        next
-      end
-
-      total_count = report.data.totals.first.values.first.to_i
-
-      json = {
-        category:    category,
-        total_items: row_count,
-        start_date:  Date.today - days_ago.to_i,
-        end_date:    Date.today,
-        total_count: total_count,
-      }
-
-      report.data.rows.each_with_index do |row, row_index|
-        count = row.metrics.first.values.first
-        percent = (count.to_f / total_count) * 100
-        dimension = format_dimension(row.dimensions.first, dimension_key)
-        item = {
-          number: row_index + 1,
-          dimension_key => dimension,
-          count: format_count(count),
-          percent: format_percent(percent),
-        }
-
-        if all_core_formulae_json
-          item.delete(:number)
-          item.delete(:percent)
-          formula_name = dimension.split.first.downcase.to_sym
-          json[:formulae] ||= {}
-          json[:formulae][formula_name] ||= []
-          json[:formulae][formula_name] << item
-        else
-          json[:items] ||= []
-          json[:items] << item
-        end
-      end
-
-      if all_core_formulae_json
-        json[:formulae] = json[:formulae].sort_by { |name, _| name }.to_h
-      elsif os_version
-        # Hack up macOS versions into the format we want
-        new_items = {}
-        json[:items].each do |item|
-          item_os_version = if item[:os_version].include?("(10.16)")
-            "11"
-          else
-            item[:os_version][(/\d\d/)]
-          end
-          item[:count] = formatted_count_to_i(item[:count])
-          item[:percent] = item[:percent].to_f
-
-          if item_os_version.to_i < 11
-            new_items[item[:os_version]] = item
-            next
-          end
-
-          new_os_version = format_dimension(item_os_version, :os_version)
-          item[:os_version] = new_os_version
-
-          unless new_items.key?(new_os_version)
-            new_items[new_os_version] = item
-            next
-          end
-
-          new_item = new_items[new_os_version]
-          new_item[:count] += item[:count]
-          new_item[:percent] += item[:percent]
-        end
-        number = 0
-        json[:items] = new_items.values
-                                .sort_by { |item| -item[:count] }
-                                .map do |item|
-          number += 1
-          item[:number] = number
-          item[:count] = format_count(item[:count])
-          item[:percent] = format_percent(item[:percent])
-          item
-        end
-        json[:total_items] = number
-      end
-
-      puts JSON.pretty_generate json
-    end
+    influx_analytics(args)
   end
 
   def influx_analytics(args)
@@ -499,10 +229,6 @@ module Homebrew
 
       puts JSON.pretty_generate json
     end
-  end
-
-  def formatted_count_to_i(formatted_count)
-    formatted_count.tr(",", "").to_i
   end
 
   def format_count(count)
