@@ -76,20 +76,13 @@ module Homebrew
 
   def influx_analytics(args)
     require "utils/analytics"
-    require "influxdb-client"
+    require "json"
 
     token = if args.setup?
       Utils::Analytics::INFLUX_TOKEN
     else
       ENV.fetch("HOMEBREW_INFLUXDB_TOKEN", nil)
     end
-
-    influxdb_client = InfluxDB2::Client.new(
-      Utils::Analytics::INFLUX_HOST,
-      token,
-      bucket: Utils::Analytics::INFLUX_BUCKET,
-      org:    Utils::Analytics::INFLUX_ORG,
-    )
 
     return if args.setup?
 
@@ -121,39 +114,49 @@ module Homebrew
     categories << :homebrew_versions if args.homebrew_versions?
     categories << :os_versions if args.os_version?
 
+    category_matching_buckets = [:build_error, :cask_install]
+
     categories.each do |category|
+      additional_where = all_core_formulae_json ? " AND tap_name = 'homebrew/core'" : ""
+      bucket = category_matching_buckets.include?(category) ? category : :formula_install
+
       case category
       when :homebrew_devcmdrun_developer
-        dimension_key = field = tag = "devcmdrun_developer"
+        dimension_key = "devcmdrun_developer"
+        groups = [:devcmdrun, :developer]
       when :homebrew_os_arch_ci
-        dimension_key = field = tag = "os_arch_ci"
+        dimension_key = "os_arch_ci"
+        groups = [:os, :arch, :ci]
       when :homebrew_prefixes
-        dimension_key = field = tag = "prefix"
+        dimension_key = "prefix"
+        groups = [:prefix]
       when :homebrew_versions
-        dimension_key = field = tag = "version"
+        dimension_key = "version"
+        groups = [:version]
       when :os_versions
         dimension_key = :os_version
-        field = "os_name_and_version"
-        tag = "os"
+        groups = [:os_name_and_version]
       else
         dimension_key = if category == :cask_install
           :cask
         else
           :formula
         end
-        field = "package"
-        tag = "pkg"
+        additional_where += " AND on_request = 'true'" if category == :formula_install_on_request
+        groups = [:package]
       end
 
       query = <<~EOS
-        from(bucket: "analytics_counts")
-          |> range(start: -#{days_ago}d, stop: now())
-          |> filter(fn: (r) => r._measurement == "#{category}" and r._field == "#{field}")
-          |> group(columns: ["#{tag}"])
-          |> sum(column: "_value")
+        SELECT COUNT(*) AS "count" FROM "#{bucket}" WHERE time >= now() - #{days_ago}d#{additional_where} GROUP BY #{groups.map { |e| "\"#{e}\"" }.join(",")}
       EOS
-      result = influxdb_client.create_query_api.query_raw(query: query).force_encoding("UTF-8")
-      lines = result.lines.drop(4)
+      json = Utils.safe_popen_read(Utils::Curl.curl_executable, "--fail", "--silent",
+                                   "--get", "#{Utils::Analytics::INFLUX_HOST}/query",
+                                   "--header", "Authorization: Token #{token}",
+                                   "--header", "Accept: application/json",
+                                   "--data-urlencode", "db=#{Utils::Analytics::INFLUX_BUCKET}",
+                                   "--data-urlencode", "q=#{query}")
+
+      api_result = JSON.parse(json)
       json = {
         category:    category,
         total_items: 0,
@@ -163,13 +166,16 @@ module Homebrew
         items:       [],
       }
 
-      lines.each do |line|
-        _, _, _index, _start, _end, count, name = line.split(",")
-        next if name.blank?
+      odie "No data returned" unless api_result["results"].first.key? "series"
 
-        dimension = format_dimension(name, dimension_key)
+      api_result["results"].first["series"].each do |result|
+        next unless result.key? "tags"
 
-        count = count.to_i
+        dimension = format_dimension(result["tags"][groups.first.to_s], dimension_key)
+
+        # we want the first count out of:
+        # "time", "count_options", "count_os_name_and_version", "count_package", "count_tap_name", "count_version"
+        count = result["values"][0][2].to_i
 
         json[:total_items] += 1
         json[:total_count] += count
