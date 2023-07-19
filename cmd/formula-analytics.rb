@@ -129,7 +129,7 @@ module Homebrew
         groups = [:os, :arch, :ci]
       when :homebrew_prefixes
         dimension_key = "prefix"
-        groups = [:prefix]
+        groups = [:prefix, :os, :arch]
       when :homebrew_versions
         dimension_key = "version"
         groups = [:version]
@@ -143,20 +143,20 @@ module Homebrew
           :formula
         end
         additional_where += " AND on_request = 'true'" if category == :formula_install_on_request
-        groups = [:package]
+        groups = [:package, :tap_name, :options]
       end
 
       query = <<~EOS
         SELECT COUNT(*) AS "count" FROM "#{bucket}" WHERE time >= now() - #{days_ago}d#{additional_where} GROUP BY #{groups.map { |e| "\"#{e}\"" }.join(",")}
       EOS
-      json = Utils.safe_popen_read(Utils::Curl.curl_executable, "--fail", "--silent",
-                                   "--get", "#{Utils::Analytics::INFLUX_HOST}/query",
-                                   "--header", "Authorization: Token #{token}",
-                                   "--header", "Accept: application/json",
-                                   "--data-urlencode", "db=#{Utils::Analytics::INFLUX_BUCKET}",
-                                   "--data-urlencode", "q=#{query}")
+      api_result_text = Utils.safe_popen_read(Utils::Curl.curl_executable, "--fail", "--silent",
+                                              "--get", "#{Utils::Analytics::INFLUX_HOST}/query",
+                                              "--header", "Authorization: Token #{token}",
+                                              "--header", "Accept: application/json",
+                                              "--data-urlencode", "db=#{Utils::Analytics::INFLUX_BUCKET}",
+                                              "--data-urlencode", "q=#{query}")
+      api_result = JSON.parse(api_result_text)
 
-      api_result = JSON.parse(json)
       json = {
         category:    category,
         total_items: 0,
@@ -171,7 +171,11 @@ module Homebrew
       api_result["results"].first["series"].each do |result|
         next unless result.key? "tags"
 
-        dimension = format_dimension(result["tags"][groups.first.to_s], dimension_key)
+        tags = result["tags"]
+        dimension = tags[groups.first.to_s]
+        next if dimension.blank?
+
+        dimension = format_dimension(dimension, dimension_key)
 
         # we want the first count out of:
         # "time", "count_options", "count_os_name_and_version", "count_package", "count_tap_name", "count_version"
@@ -180,6 +184,26 @@ module Homebrew
         json[:total_items] += 1
         json[:total_count] += count
 
+        if (tap_name = tags["tap_name"].presence) &&
+           ((tap_name != "homebrew/cask" && dimension_key == :cask) ||
+            (tap_name != "homebrew/core" && dimension_key == :formula))
+          dimension = "#{tap_name}/#{dimension}"
+        end
+
+        if category == :homebrew_devcmdrun_developer
+          dimension = "devcmdrun=#{tags["devcmdrun"]} HOMEBREW_DEVELOPER=#{tags["developer"]}"
+        elsif category == :homebrew_os_arch_ci
+          dimension = "#{tags["os"]} #{tags["arch"]}"
+          dimension = "#{dimension} (CI)" if tags["ci"] == "true"
+        elsif category == :homebrew_prefixes && dimension == "custom-prefix"
+          dimension = "#{dimension} (#{tags["os"]} #{tags["arch"]})"
+        end
+
+        if (all_core_formulae_json || category == :build_error) &&
+           (options = tags["options"].presence)
+          dimension = "#{dimension} #{options}"
+        end
+
         json[:items] << {
           number: nil,
           dimension_key => dimension,
@@ -187,21 +211,19 @@ module Homebrew
         }
       end
 
-      # Combine identical OS versions
-      if category == :os_versions
-        os_version_items = {}
+      # Combine identical values
+      deduped_items = {}
 
-        json[:items].each do |item|
-          os_version_name = item[dimension_key]
-          if os_version_items.key?(os_version_name)
-            os_version_items[os_version_name][:count] += item[:count]
-          else
-            os_version_items[os_version_name] = item
-          end
+      json[:items].each do |item|
+        key = item[dimension_key]
+        if deduped_items.key?(key)
+          deduped_items[key][:count] += item[:count]
+        else
+          deduped_items[key] = item
         end
-
-        json[:items] = os_version_items.values
       end
+
+      json[:items] = deduped_items.values
 
       if all_core_formulae_json
         core_formula_items = {}
