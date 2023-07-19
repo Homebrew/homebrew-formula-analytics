@@ -117,7 +117,7 @@ module Homebrew
     category_matching_buckets = [:build_error, :cask_install]
 
     categories.each do |category|
-      additional_where = all_core_formulae_json ? " AND tap_name = 'homebrew/core'" : ""
+      additional_where = all_core_formulae_json ? " AND tap_name =~ /homebrew\\/(core|cask)/" : ""
       bucket = category_matching_buckets.include?(category) ? category : :formula_install
 
       case category
