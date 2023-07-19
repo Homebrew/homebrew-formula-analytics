@@ -28,5 +28,13 @@ jobs:
 
     - run: brew test-bot --only-tap-syntax
 
-    - name: Test formula-analytics setup
-      run: brew formula-analytics --setup
+    - run: brew formula-analytics --setup
+      if: github.event.pull_request.head.repo.forks
+
+    - name: Run brew formula-analytics and brew generate-analytics-api
+      if: github.event.pull_request.head.repo.fork == false
+      run: |
+        brew formula-analytics
+        brew generate-analytics-api
+      env:
+        HOMEBREW_INFLUXDB_TOKEN: ${{ secrets.HOMEBREW_INFLUXDB_TOKEN }}
