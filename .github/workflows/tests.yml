@@ -31,7 +31,6 @@ jobs:
     - run: brew test-bot --only-tap-syntax
 
     - run: brew formula-analytics --setup
-      if: github.event.pull_request.head.repo.forks
 
     - run: brew formula-analytics --install --json --days-ago=2
       if: github.event.pull_request.head.repo.fork == false && (github.event_name == 'pull_request' && github.event.pull_request.user.login != 'dependabot[bot]')
