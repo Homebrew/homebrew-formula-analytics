@@ -8,7 +8,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macOS-latest]
+        os:
+          - ubuntu-latest
+          - macos-latest
     steps:
     - name: Set up Homebrew
       id: set-up-homebrew
@@ -28,5 +30,15 @@ jobs:
 
     - run: brew test-bot --only-tap-syntax
 
-    - name: Test formula-analytics setup
-      run: brew formula-analytics --setup
+    - run: brew formula-analytics --setup
+      if: github.event.pull_request.head.repo.forks
+
+    - run: brew formula-analytics --install --json --days-ago=2
+      if: github.event.pull_request.head.repo.fork == false && (github.event_name == 'pull_request' && github.event.pull_request.user.login != 'dependabot[bot]')
+      env:
+        HOMEBREW_INFLUXDB_TOKEN: ${{ secrets.HOMEBREW_INFLUXDB_READ_TOKEN }}
+
+    - run: brew generate-analytics-api
+      if: runner.os == 'Linux' && github.event.pull_request.head.repo.fork == false && (github.event_name == 'pull_request' && github.event.pull_request.user.login != 'dependabot[bot]')
+      env:
+        HOMEBREW_INFLUXDB_TOKEN: ${{ secrets.HOMEBREW_INFLUXDB_READ_TOKEN }}

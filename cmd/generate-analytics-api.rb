@@ -41,20 +41,25 @@ module Homebrew
   end
 
   def run_formula_analytics(*args)
+    # Give InfluxDB some breathing room.
+    sleep 4
+
     puts "brew formula-analytics #{args.join(" ")}"
 
     retries = 0
-    output, _, status = system_command HOMEBREW_BREW_FILE, args: ["formula-analytics", *args]
+    result = system_command HOMEBREW_BREW_FILE, args: ["formula-analytics", *args], print_stderr: false
 
-    while !status.success? && retries < MAX_RETRIES
-      sleep 2**(retries + 3)
+    while !result.success? && retries < MAX_RETRIES
+      # Give InfluxDB some more breathing room.
+      sleep 4**(retries+2)
+
       retries += 1
-      output, _, status = system_command HOMEBREW_BREW_FILE, args: ["formula-analytics", *args]
+      result = system_command HOMEBREW_BREW_FILE, args: ["formula-analytics", *args], print_stderr: false
     end
 
-    odie "`brew formula-analytics #{args.join(" ")}` failed" unless status.success?
+    odie "`brew formula-analytics #{args.join(" ")}` failed: #{result.merged_output}" unless result.success?
 
-    output
+    result.stdout
   end
 
   def generate_analytics_api
