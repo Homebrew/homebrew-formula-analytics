@@ -172,17 +172,27 @@ module Homebrew
         next unless result.key? "tags"
 
         tags = result["tags"]
-        dimension = tags[groups.first.to_s]
+        dimension = case category
+        when :homebrew_devcmdrun_developer
+          "devcmdrun=#{tags["devcmdrun"]} HOMEBREW_DEVELOPER=#{tags["developer"]}"
+        when :homebrew_os_arch_ci
+          if tags["ci"] == "true"
+            "#{tags["os"]} #{tags["arch"]} (CI)"
+          else
+            "#{tags["os"]} #{tags["arch"]}"
+          end
+        when :homebrew_prefixes
+          if tags["prefix"] == "custom-prefix"
+            "#{tags["prefix"]} (#{tags["os"]} #{tags["arch"]})"
+          else
+            (tags["prefix"]).to_s
+          end
+        when :os_versions
+          format_os_version_dimension(tags["os_name_and_version"])
+        else
+          tags[groups.first.to_s]
+        end
         next if dimension.blank?
-
-        dimension = format_dimension(dimension, dimension_key)
-
-        # we want the first count out of:
-        # "time", "count_options", "count_os_name_and_version", "count_package", "count_tap_name", "count_version"
-        count = result["values"][0][2].to_i
-
-        json[:total_items] += 1
-        json[:total_count] += count
 
         if (tap_name = tags["tap_name"].presence) &&
            ((tap_name != "homebrew/cask" && dimension_key == :cask) ||
@@ -190,19 +200,19 @@ module Homebrew
           dimension = "#{tap_name}/#{dimension}"
         end
 
-        if category == :homebrew_devcmdrun_developer
-          dimension = "devcmdrun=#{tags["devcmdrun"]} HOMEBREW_DEVELOPER=#{tags["developer"]}"
-        elsif category == :homebrew_os_arch_ci
-          dimension = "#{tags["os"]} #{tags["arch"]}"
-          dimension = "#{dimension} (CI)" if tags["ci"] == "true"
-        elsif category == :homebrew_prefixes && dimension == "custom-prefix"
-          dimension = "#{dimension} (#{tags["os"]} #{tags["arch"]})"
-        end
-
         if (all_core_formulae_json || category == :build_error) &&
            (options = tags["options"].presence)
           dimension = "#{dimension} #{options}"
         end
+
+        dimension = dimension.strip
+
+        # we want the first count out of:
+        # "time", "count_options", "count_os_name_and_version", "count_package", "count_tap_name", "count_version"
+        count = result["values"][0][2].to_i
+
+        json[:total_items] += 1
+        json[:total_count] += count
 
         json[:items] << {
           number: nil,
@@ -267,12 +277,12 @@ module Homebrew
     format("%<percent>.2f", percent: percent).gsub(/\.00$/, "")
   end
 
-  def format_dimension(dimension, key)
-    dimension = dimension.chomp
-    return dimension if key != :os_version
+  def format_os_version_dimension(dimension)
+    return if dimension.blank?
 
     dimension = dimension.gsub(/^Intel ?/, "")
                          .gsub(/^macOS ?/, "")
+                         .gsub(/ \(.+\)$/, "")
     case dimension
     when "10.4" then "Mac OS X Tiger (10.4)"
     when "10.5" then "Mac OS X Leopard (10.5)"
@@ -292,6 +302,10 @@ module Homebrew
     when /^14\.?/ then "macOS Sonoma (14)"
     when /Ubuntu(-Server)? (14|16|18|20|22)\.04/ then "Ubuntu #{Regexp.last_match(2)}.04 LTS"
     when /Ubuntu(-Server)? (\d+\.\d+).\d ?(LTS)?/ then "Ubuntu #{Regexp.last_match(2)} #{Regexp.last_match(3)}".strip
+    when %r{Debian GNU/Linux (\d+)\.\d+} then "Debian #{Regexp.last_match(1)} #{Regexp.last_match(2)}"
+    when /CentOS (\w+) (\d+)/ then "CentOS #{Regexp.last_match(1)} #{Regexp.last_match(2)}"
+    when /Fedora Linux (\d+)[.\d]*/ then "Fedora Linux #{Regexp.last_match(1)}"
+    when /KDE neon .*([\d.]+)/ then "KDE neon #{Regexp.last_match(1)}"
     else dimension
     end
   end
