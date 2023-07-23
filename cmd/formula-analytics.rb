@@ -46,16 +46,24 @@ module Homebrew
     end
   end
 
-  REPO_ROOT = Pathname.new("#{File.dirname(__FILE__)}/..").freeze
-  VENDOR_RUBY = "#{REPO_ROOT}/vendor/ruby"
-  BUNDLER_SETUP = Pathname.new("#{VENDOR_RUBY}/bundler/setup.rb").freeze
+  REPO_ROOT = Pathname.new("#{File.dirname(__FILE__)}/..").expand_path.freeze
+  VENDOR_RUBY = (REPO_ROOT/"vendor/ruby").freeze
+  VENDOR_PYTHON = (REPO_ROOT/"vendor/python").freeze
+  BUNDLER_SETUP = (VENDOR_RUBY/"bundler/setup.rb").freeze
+  PYTHON_VERSION = (REPO_ROOT/".python-version").read.chomp.freeze
   FIRST_INFLUXDB_ANALYTICS_DATE = Date.new(2023, 03, 27).freeze
 
   def formula_analytics
     args = formula_analytics_args.parse
 
-    # Configure RubyGems.
-    require "rubygems"
+    setup_ruby
+    setup_python
+    influx_analytics(args)
+  end
+
+  def setup_ruby
+    # System Ruby does not pick up the correct SDK by default.
+    ENV["SDKROOT"] = MacOS.sdk_path_if_needed if OS.mac?
 
     Homebrew.install_bundler!
     REPO_ROOT.cd do
@@ -64,31 +72,52 @@ module Homebrew
       end
     end
 
-    require "rbconfig"
-    ENV["GEM_HOME"] = ENV["GEM_PATH"] = "#{VENDOR_RUBY}/#{RUBY_ENGINE}/#{RbConfig::CONFIG["ruby_version"]}"
-    Gem.clear_paths
-    Gem::Specification.reset
-
     require_relative BUNDLER_SETUP
+  end
 
-    influx_analytics(args)
+  def setup_python
+    venv_root = VENDOR_PYTHON/PYTHON_VERSION
+    VENDOR_PYTHON.children.reject { |path| path == venv_root }.each(&:rmtree) if VENDOR_PYTHON.exist?
+    venv_python = venv_root/"bin/python"
+
+    repo_requirements = REPO_ROOT/"requirements.txt"
+    venv_requirements = venv_root/"requirements.txt"
+    if !venv_requirements.exist? || !FileUtils.identical?(repo_requirements, venv_requirements)
+      safe_system "python#{PYTHON_VERSION}", "-I", "-m", "venv", "--clear", venv_root, out: :err
+      safe_system venv_python, "-m", "pip", "install",
+                  "--disable-pip-version-check",
+                  "--require-hashes",
+                  "--requirement", repo_requirements,
+                  out: :err
+      FileUtils.cp repo_requirements, venv_requirements
+    end
+
+    ENV["PATH"] = "#{venv_root}/bin:#{ENV.fetch("PATH")}"
+    ENV["__PYVENV_LAUNCHER__"] = venv_python # support macOS framework Pythons
+
+    require "pycall/import"
+    PyCall.init(venv_python)
+    PyCall.sys.setdlopenflags(PyCall.sys.getdlopenflags | PyCall.import_module("os").RTLD_DEEPBIND) if OS.linux?
+    extend PyCall::Import
   end
 
   def influx_analytics(args)
     require "utils/analytics"
     require "json"
-
-    token = if args.setup?
-      Utils::Analytics::INFLUX_TOKEN
-    else
-      ENV.fetch("HOMEBREW_INFLUXDB_TOKEN", nil)
-    end
+    pyfrom "flightsql.client", import: :FlightSQLClient
 
     return if args.setup?
 
     odie "HOMEBREW_NO_ANALYTICS is set!" if ENV["HOMEBREW_NO_ANALYTICS"]
 
-    odie "No InfluxDB credentials found in HOMEBREW_INFLUXDB_TOKEN!" unless ENV["HOMEBREW_INFLUXDB_TOKEN"]
+    token = ENV.fetch("HOMEBREW_INFLUXDB_TOKEN", nil)
+    odie "No InfluxDB credentials found in HOMEBREW_INFLUXDB_TOKEN!" unless token
+
+    client = FlightSQLClient.new(
+      host:     URI.parse(Utils::Analytics::INFLUX_HOST).host,
+      token:    token,
+      metadata: { database: Utils::Analytics::INFLUX_BUCKET },
+    )
 
     max_days_ago = (Date.today - FIRST_INFLUXDB_ANALYTICS_DATE).to_i
     days_ago = (args.days_ago || 30).to_i
@@ -117,7 +146,7 @@ module Homebrew
     category_matching_buckets = [:build_error, :cask_install]
 
     categories.each do |category|
-      additional_where = all_core_formulae_json ? " AND tap_name =~ /homebrew\\/(core|cask)/" : ""
+      additional_where = all_core_formulae_json ? " AND tap_name ~ '^homebrew/(core|cask)$'" : ""
       bucket = category_matching_buckets.include?(category) ? category : :formula_install
 
       case category
@@ -136,26 +165,21 @@ module Homebrew
       when :os_versions
         dimension_key = :os_version
         groups = [:os_name_and_version]
+      when :cask_install
+        dimension_key = :cask
+        groups = [:package, :tap_name]
       else
-        dimension_key = if category == :cask_install
-          :cask
-        else
-          :formula
-        end
+        dimension_key = :formula
         additional_where += " AND on_request = 'true'" if category == :formula_install_on_request
         groups = [:package, :tap_name, :options]
       end
 
+      sql_groups = groups.map { |e| "\"#{e}\"" }.join(",")
       query = <<~EOS
-        SELECT COUNT(*) AS "count" FROM "#{bucket}" WHERE time >= now() - #{days_ago}d#{additional_where} GROUP BY #{groups.map { |e| "\"#{e}\"" }.join(",")}
+        SELECT #{sql_groups}, COUNT(*) AS "count" FROM "#{bucket}" WHERE time >= now() - INTERVAL '#{days_ago} day'#{additional_where} GROUP BY #{sql_groups}
       EOS
-      api_result_text = Utils.safe_popen_read(Utils::Curl.curl_executable, "--fail", "--silent",
-                                              "--get", "#{Utils::Analytics::INFLUX_HOST}/query",
-                                              "--header", "Authorization: Token #{token}",
-                                              "--header", "Accept: application/json",
-                                              "--data-urlencode", "db=#{Utils::Analytics::INFLUX_BUCKET}",
-                                              "--data-urlencode", "q=#{query}")
-      api_result = JSON.parse(api_result_text)
+      info = client.execute(query)
+      reader = client.do_get(info.endpoints[0].ticket)
 
       json = {
         category:    category,
@@ -166,60 +190,57 @@ module Homebrew
         items:       [],
       }
 
-      odie "No data returned" unless api_result["results"].first.key? "series"
-
-      api_result["results"].first["series"].each do |result|
-        next unless result.key? "tags"
-
-        tags = result["tags"]
-        dimension = case category
-        when :homebrew_devcmdrun_developer
-          "devcmdrun=#{tags["devcmdrun"]} HOMEBREW_DEVELOPER=#{tags["developer"]}"
-        when :homebrew_os_arch_ci
-          if tags["ci"] == "true"
-            "#{tags["os"]} #{tags["arch"]} (CI)"
+      PyCall.iterable(reader).each do |chunk|
+        chunk.data.to_pylist.each do |result|
+          dimension = case category
+          when :homebrew_devcmdrun_developer
+            "devcmdrun=#{result["devcmdrun"]} HOMEBREW_DEVELOPER=#{result["developer"]}"
+          when :homebrew_os_arch_ci
+            if result["ci"] == "true"
+              "#{result["os"]} #{result["arch"]} (CI)"
+            else
+              "#{result["os"]} #{result["arch"]}"
+            end
+          when :homebrew_prefixes
+            if result["prefix"] == "custom-prefix"
+              "#{result["prefix"]} (#{result["os"]} #{result["arch"]})"
+            else
+              (result["prefix"]).to_s
+            end
+          when :os_versions
+            format_os_version_dimension(result["os_name_and_version"])
           else
-            "#{tags["os"]} #{tags["arch"]}"
+            result[groups.first.to_s]
           end
-        when :homebrew_prefixes
-          if tags["prefix"] == "custom-prefix"
-            "#{tags["prefix"]} (#{tags["os"]} #{tags["arch"]})"
-          else
-            (tags["prefix"]).to_s
+          next if dimension.blank?
+
+          if (tap_name = result["tap_name"].presence) &&
+             ((tap_name != "homebrew/cask" && dimension_key == :cask) ||
+              (tap_name != "homebrew/core" && dimension_key == :formula))
+            dimension = "#{tap_name}/#{dimension}"
           end
-        when :os_versions
-          format_os_version_dimension(tags["os_name_and_version"])
-        else
-          tags[groups.first.to_s]
+
+          if (all_core_formulae_json || category == :build_error) &&
+             (options = result["options"].presence)
+            dimension = "#{dimension} #{options}"
+          end
+
+          dimension = dimension.strip
+
+          count = result["count"]
+
+          json[:total_items] += 1
+          json[:total_count] += count
+
+          json[:items] << {
+            number: nil,
+            dimension_key => dimension,
+            count: count,
+          }
         end
-        next if dimension.blank?
-
-        if (tap_name = tags["tap_name"].presence) &&
-           ((tap_name != "homebrew/cask" && dimension_key == :cask) ||
-            (tap_name != "homebrew/core" && dimension_key == :formula))
-          dimension = "#{tap_name}/#{dimension}"
-        end
-
-        if (all_core_formulae_json || category == :build_error) &&
-           (options = tags["options"].presence)
-          dimension = "#{dimension} #{options}"
-        end
-
-        dimension = dimension.strip
-
-        # we want the first count out of:
-        # "time", "count_options", "count_os_name_and_version", "count_package", "count_tap_name", "count_version"
-        count = result["values"][0][2].to_i
-
-        json[:total_items] += 1
-        json[:total_count] += count
-
-        json[:items] << {
-          number: nil,
-          dimension_key => dimension,
-          count: count,
-        }
       end
+
+      odie "No data returned" if json[:total_count].zero?
 
       # Combine identical values
       deduped_items = {}

@@ -2,4 +2,5 @@
 
 source "https://rubygems.org"
 
-gem "influxdb-client"
+# Run `bundle lock --update` after updating this list.
+gem "pycall"
