@@ -41,19 +41,19 @@ module Homebrew
   end
 
   def run_formula_analytics(*args)
-    # Give InfluxDB some breathing room.
-    sleep 4
-
     puts "brew formula-analytics #{args.join(" ")}"
 
     retries = 0
     result = system_command HOMEBREW_BREW_FILE, args: ["formula-analytics", *args], print_stderr: false
 
     while !result.success? && retries < MAX_RETRIES
+      $stderr.puts(result.stderr)
+
       # Give InfluxDB some more breathing room.
       sleep 4**(retries+2)
 
       retries += 1
+      puts "Retrying (#{retries}/#{MAX_RETRIES})..."
       result = system_command HOMEBREW_BREW_FILE, args: ["formula-analytics", *args], print_stderr: false
     end
 
