@@ -207,12 +207,17 @@ module Homebrew
 
         dimension = dimension.strip
 
-        # we want any valid count out of:
+        # we want any valid count that isn't the options out of:
         # "time", "count_options", "count_os_name_and_version", "count_package", "count_tap_name", "count_version"
-        count = begin
-          Integer(result["values"].first.last, 10)
-        rescue ArgumentError, TypeError
-          nil
+        count = nil
+        result["values"].first.drop(2).find do |possible_count|
+          break if count.present?
+
+          count ||= begin
+            Integer(possible_count, 10)
+          rescue ArgumentError, TypeError
+            nil
+          end
         end
         odie "Invalid amount of items" if count.blank?
 
