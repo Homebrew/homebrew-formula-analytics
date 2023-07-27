@@ -209,7 +209,7 @@ module Homebrew
 
         dimension = dimension.strip
 
-        # we want the first count out of:
+        # we want any valid count out of:
         # "time", "count_options", "count_os_name_and_version", "count_package", "count_tap_name", "count_version"
         count = begin
           Integer(result["values"][0].last)
