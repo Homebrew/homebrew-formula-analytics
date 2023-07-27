@@ -171,6 +171,8 @@ module Homebrew
       api_result["results"].first["series"].each do |result|
         next unless result.key? "tags"
 
+        # odebug result
+
         tags = result["tags"]
         dimension = case category
         when :homebrew_devcmdrun_developer
@@ -209,7 +211,12 @@ module Homebrew
 
         # we want the first count out of:
         # "time", "count_options", "count_os_name_and_version", "count_package", "count_tap_name", "count_version"
-        count = result["values"][0][2].to_i
+        count = begin
+          Integer(result["values"][0].last)
+        rescue
+          nil
+        end
+        odie "Invalid amount of items" if count.blank?
 
         json[:total_items] += 1
         json[:total_count] += count
