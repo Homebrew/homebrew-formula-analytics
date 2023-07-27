@@ -214,7 +214,13 @@ module Homebrew
           break if count.present?
 
           count ||= begin
-            Integer(possible_count, 10)
+            if possible_count.is_a?(Integer)
+              possible_count
+            elsif possible_count.is_a?(String)
+              Integer(possible_count, 10)
+            else
+              Integer(possible_count)
+            end
           rescue ArgumentError, TypeError
             nil
           end
