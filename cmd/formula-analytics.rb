@@ -207,9 +207,14 @@ module Homebrew
 
         dimension = dimension.strip
 
-        # we want the first count out of:
+        # we want any valid count out of:
         # "time", "count_options", "count_os_name_and_version", "count_package", "count_tap_name", "count_version"
-        count = result["values"][0][2].to_i
+        count = begin
+          Integer(result["values"].first.last, 10)
+        rescue ArgumentError, TypeError
+          nil
+        end
+        odie "Invalid amount of items" if count.blank?
 
         json[:total_items] += 1
         json[:total_count] += count
