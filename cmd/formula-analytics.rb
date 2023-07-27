@@ -171,8 +171,6 @@ module Homebrew
       api_result["results"].first["series"].each do |result|
         next unless result.key? "tags"
 
-        # odebug result
-
         tags = result["tags"]
         dimension = case category
         when :homebrew_devcmdrun_developer
