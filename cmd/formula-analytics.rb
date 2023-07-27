@@ -210,8 +210,8 @@ module Homebrew
         # we want any valid count out of:
         # "time", "count_options", "count_os_name_and_version", "count_package", "count_tap_name", "count_version"
         count = begin
-          Integer(result["values"][0].last)
-        rescue
+          Integer(result["values"].first.last, 10)
+        rescue ArgumentError, TypeError
           nil
         end
         odie "Invalid amount of items" if count.blank?
