@@ -47,7 +47,7 @@ module Homebrew
   end
 
   REPO_ROOT = Pathname.new("#{File.dirname(__FILE__)}/..").freeze
-  VENDOR_RUBY = "#{REPO_ROOT}/vendor/ruby"
+  VENDOR_RUBY = "#{REPO_ROOT}/vendor/ruby".freeze
   BUNDLER_SETUP = Pathname.new("#{VENDOR_RUBY}/bundler/setup.rb").freeze
   FIRST_INFLUXDB_ANALYTICS_DATE = Date.new(2023, 03, 27).freeze
 
