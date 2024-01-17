@@ -202,6 +202,10 @@ module Homebrew
 
         if (all_core_formulae_json || category == :build_error) &&
            (options = tags["options"].presence)
+          # homebrew/core formulae don't have non-HEAD options but they ended up in our analytics anyway.
+          if all_core_formulae_json
+            options = options.split.include?("--HEAD") ? "--HEAD" : ""
+          end
           dimension = "#{dimension} #{options}"
         end
 
@@ -258,7 +262,7 @@ module Homebrew
           item.delete(:number)
           item[:count] = format_count(item[:count])
 
-          formula_name = item[dimension_key]
+          formula_name, = item[dimension_key].split.first
           next if formula_name.include?("/")
 
           core_formula_items[formula_name] ||= []
