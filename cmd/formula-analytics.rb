@@ -260,16 +260,21 @@ module Homebrew
 
         json[:items].each do |item|
           item.delete(:number)
-          item[:count] = format_count(item[:count])
-
           formula_name, = item[dimension_key].split.first
           next if formula_name.include?("/")
 
           core_formula_items[formula_name] ||= []
           core_formula_items[formula_name] << item
         end
-
         json.delete(:items)
+
+        core_formula_items.each_value do |items|
+          items.sort_by! { |item| -item[:count] }
+          items.each do |item|
+            item[:count] = format_count(item[:count])
+          end
+        end
+
         json[:formulae] = core_formula_items.sort_by { |name, _| name }.to_h
       else
         json[:items].sort_by! do |item|
