@@ -41,19 +41,19 @@ module Homebrew
   end
 
   def run_formula_analytics(*args)
-    # Give InfluxDB some breathing room.
-    sleep 4
-
     puts "brew formula-analytics #{args.join(" ")}"
 
     retries = 0
     result = system_command HOMEBREW_BREW_FILE, args: ["formula-analytics", *args], print_stderr: false
 
     while !result.success? && retries < MAX_RETRIES
+      $stderr.puts(result.stderr)
+
       # Give InfluxDB some more breathing room.
       sleep 4**(retries+2)
 
       retries += 1
+      puts "Retrying #{args.join(" ")} (#{retries}/#{MAX_RETRIES})..."
       result = system_command HOMEBREW_BREW_FILE, args: ["formula-analytics", *args], print_stderr: false
     end
 
@@ -74,6 +74,8 @@ module Homebrew
     root_dir = Pathname.pwd
     analytics_data_dir = root_dir/"_data/analytics"
     analytics_api_dir = root_dir/"api/analytics"
+
+    threads = []
 
     CATEGORIES.each do |category|
       formula_analytics_args = []
@@ -120,11 +122,14 @@ module Homebrew
       DAYS.each do |days|
         next if days != "30" && category_name == "build-error" && !data_source.nil?
 
-        args = %W[--days-ago=#{days}]
-        output = run_formula_analytics(*formula_analytics_args, *args)
-        (analytics_data_path/"#{days}d.json").write output
-        (analytics_api_path/"#{days}d.json").write analytics_json_template(category_name, data_source: data_source)
+        threads << Thread.new do
+          args = %W[--days-ago=#{days}]
+          (analytics_data_path/"#{days}d.json").write run_formula_analytics(*formula_analytics_args, *args)
+          (analytics_api_path/"#{days}d.json").write analytics_json_template(category_name, data_source: data_source)
+        end
       end
     end
+
+    threads.each(&:join)
   end
 end
