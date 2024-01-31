@@ -44,22 +44,20 @@ module Homebrew
     puts "brew formula-analytics #{args.join(" ")}"
 
     retries = 0
-    result = system_command HOMEBREW_BREW_FILE, args: ["formula-analytics", *args], print_stderr: false
+    result = Utils.popen_read(HOMEBREW_BREW_FILE, "formula-analytics", *args)
 
-    while !result.success? && retries < MAX_RETRIES
-      $stderr.puts(result.stderr)
-
+    while !$CHILD_STATUS.success? && retries < MAX_RETRIES
       # Give InfluxDB some more breathing room.
       sleep 4**(retries+2)
 
       retries += 1
       puts "Retrying #{args.join(" ")} (#{retries}/#{MAX_RETRIES})..."
-      result = system_command HOMEBREW_BREW_FILE, args: ["formula-analytics", *args], print_stderr: false
+      result = Utils.popen_read(HOMEBREW_BREW_FILE, "formula-analytics", *args)
     end
 
-    odie "`brew formula-analytics #{args.join(" ")}` failed: #{result.merged_output}" unless result.success?
+    odie "`brew formula-analytics #{args.join(" ")}` failed: #{result.merged_output}" unless $CHILD_STATUS.success?
 
-    result.stdout
+    result
   end
 
   def generate_analytics_api
