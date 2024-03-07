@@ -158,7 +158,7 @@ module Homebrew
       api_result = JSON.parse(api_result_text)
 
       json = {
-        category:    category,
+        category:,
         total_items: 0,
         start_date:  Date.today - days_ago.to_i,
         end_date:    Date.today,
@@ -237,7 +237,7 @@ module Homebrew
         json[:items] << {
           number: nil,
           dimension_key => dimension,
-          count: count,
+          count:,
         }
       end
 
@@ -299,7 +299,7 @@ module Homebrew
   end
 
   def format_percent(percent)
-    format("%<percent>.2f", percent: percent).gsub(/\.00$/, "")
+    format("%<percent>.2f", percent:).gsub(/\.00$/, "")
   end
 
   def format_os_version_dimension(dimension)

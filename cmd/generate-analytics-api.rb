@@ -123,7 +123,7 @@ module Homebrew
         threads << Thread.new do
           args = %W[--days-ago=#{days}]
           (analytics_data_path/"#{days}d.json").write run_formula_analytics(*formula_analytics_args, *args)
-          (analytics_api_path/"#{days}d.json").write analytics_json_template(category_name, data_source: data_source)
+          (analytics_api_path/"#{days}d.json").write analytics_json_template(category_name, data_source:)
         end
       end
     end
