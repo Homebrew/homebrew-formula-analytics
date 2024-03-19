@@ -55,7 +55,7 @@ module Homebrew
       result = Utils.popen_read(HOMEBREW_BREW_FILE, "formula-analytics", *args)
     end
 
-    odie "`brew formula-analytics #{args.join(" ")}` failed: #{result.merged_output}" unless $CHILD_STATUS.success?
+    odie "`brew formula-analytics #{args.join(" ")}` failed: #{result}" unless $CHILD_STATUS.success?
 
     result
   end
