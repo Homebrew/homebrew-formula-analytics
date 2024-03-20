@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+# test
+
 require "cli/parser"
 
 module Homebrew
