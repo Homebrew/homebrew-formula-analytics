@@ -44,7 +44,7 @@ module Homebrew
     puts "brew formula-analytics #{args.join(" ")}"
 
     retries = 0
-    result = Utils.popen_read(HOMEBREW_BREW_FILE, "formula-analytics", *args)
+    result = Utils.popen_read(HOMEBREW_BREW_FILE, "formula-analytics", *args, err: :err)
 
     while !$CHILD_STATUS.success? && retries < MAX_RETRIES
       # Give InfluxDB some more breathing room.
@@ -52,10 +52,10 @@ module Homebrew
 
       retries += 1
       puts "Retrying #{args.join(" ")} (#{retries}/#{MAX_RETRIES})..."
-      result = Utils.popen_read(HOMEBREW_BREW_FILE, "formula-analytics", *args)
+      result = Utils.popen_read(HOMEBREW_BREW_FILE, "formula-analytics", *args, err: :err)
     end
 
-    odie "`brew formula-analytics #{args.join(" ")}` failed: #{result.merged_output}" unless $CHILD_STATUS.success?
+    odie "`brew formula-analytics #{args.join(" ")}` failed: #{result}" unless $CHILD_STATUS.success?
 
     result
   end
