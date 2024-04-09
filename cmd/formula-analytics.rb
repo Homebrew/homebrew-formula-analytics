@@ -210,6 +210,7 @@ module Homebrew
         end
 
         dimension = dimension.strip
+        next if dimension.match?(/[<>]/)
 
         # we want any valid count that isn't the options out of:
         # "time", "count_options", "count_os_name_and_version", "count_package", "count_tap_name", "count_version"
