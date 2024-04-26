@@ -33,6 +33,12 @@ module Homebrew
              description: "Output Homebrew prefixes."
       switch "--homebrew-versions",
              description: "Output Homebrew versions."
+      switch "--brew-command-run",
+             description: "Output `brew` commands run."
+      switch "--brew-command-run-options",
+             description: "Output `brew` commands run with options."
+      switch "--brew-test-bot-test",
+             description: "Output `brew test-bot` steps run."
       switch "--json",
              description: "Output JSON. This is required: plain text support has been removed."
       switch "--all-core-formulae-json",
@@ -40,7 +46,9 @@ module Homebrew
                           "Homebrew/homebrew-core formulae."
       switch "--setup",
              description: "Install the necessary gems, require them and exit without running a query."
-      conflicts "--install", "--cask-install", "--install-on-request", "--build-error", "--os-version"
+      conflicts "--install", "--cask-install", "--install-on-request", "--build-error", "--os-version",
+                "--homebrew-devcmdrun-developer", "--homebrew-os-arch-ci", "--homebrew-prefixes",
+                "--homebrew-versions", "--brew-command-run", "--brew-command-run-options", "--brew-test-bot-test"
       conflicts "--json", "--all-core-formulae-json", "--setup"
       named_args :none
     end
@@ -113,12 +121,24 @@ module Homebrew
     categories << :homebrew_prefixes if args.homebrew_prefixes?
     categories << :homebrew_versions if args.homebrew_versions?
     categories << :os_versions if args.os_version?
+    categories << :command_run if args.brew_command_run?
+    categories << :command_run_options if args.brew_command_run_options?
+    categories << :test_bot_test if args.brew_test_bot_test?
 
-    category_matching_buckets = [:build_error, :cask_install]
+    category_matching_buckets = [:build_error, :cask_install, :command_run, :test_bot_test]
+
+    # TODO: we don't seem to get a valid count for these categories, unclear why.
+    count_being_weird_categories = [:command_run_options, :test_bot_test]
 
     categories.each do |category|
       additional_where = all_core_formulae_json ? " AND tap_name =~ /homebrew\\/(core|cask)/" : ""
-      bucket = category_matching_buckets.include?(category) ? category : :formula_install
+      bucket = if category_matching_buckets.include?(category)
+        category
+      elsif category == :command_run_options
+        :command_run
+      else
+        :formula_install
+      end
 
       case category
       when :homebrew_devcmdrun_developer
@@ -136,6 +156,16 @@ module Homebrew
       when :os_versions
         dimension_key = :os_version
         groups = [:os_name_and_version]
+      when :command_run
+        dimension_key = "command_run"
+        groups = [:command]
+      when :command_run_options
+        dimension_key = "command_run_options"
+        groups = [:command, :options, :devcmdrun, :developer]
+        additional_where += " AND ci = 'false'"
+      when :test_bot_test
+        dimension_key = "test_bot_test"
+        groups = [:command, :passed, :arch, :os]
       else
         dimension_key = if category == :cask_install
           :cask
@@ -189,6 +219,24 @@ module Homebrew
           end
         when :os_versions
           format_os_version_dimension(tags["os_name_and_version"])
+        when :command_run_options
+          "#{tags["command"]} #{tags["options"]}"
+        when :test_bot_test
+          command_and_package, options = tags["command"].split.partition { |arg| !arg.start_with?("-") }
+
+          # Cleanup bad data before https://github.com/Homebrew/homebrew-test-bot/pull/1043
+          # TODO: actually delete this from InfluxDB.
+          # Can delete this code after 27th April 2025.
+          next if %w[audit install linkage style test].exclude?(command_and_package.first)
+          next if command_and_package.last.include?("/")
+          next if options.include?("--tap=")
+          next if options.include?("--only-dependencies")
+          next if options.include?("--cached")
+
+          command_and_options = (command_and_package + options.sort).join(" ")
+          passed = (tags["passed"] == "true") ? "PASSED" : "FAILED"
+
+          "#{command_and_options} (#{tags["os"]} #{tags["arch"]}) (#{passed})"
         else
           tags[groups.first.to_s]
         end
@@ -212,10 +260,9 @@ module Homebrew
         dimension = dimension.strip
         next if dimension.match?(/[<>]/)
 
-        # we want any valid count that isn't the options out of:
-        # "time", "count_options", "count_os_name_and_version", "count_package", "count_tap_name", "count_version"
+        # we want any valid count that isn't the time field
         count = nil
-        result["values"].first.drop(2).find do |possible_count|
+        result["values"].first.compact.drop(1).find do |possible_count|
           break if count.present?
 
           count ||= begin
@@ -229,7 +276,15 @@ module Homebrew
           rescue ArgumentError, TypeError
             nil
           end
+
+          next if count <= 0
+
+          count
         end
+
+        # TODO: we don't seem to get a valid count for these categories, unclear why.
+        count ||= 1 if count_being_weird_categories.include?(category)
+
         odie "Invalid amount of items" if count.blank?
 
         json[:total_items] += 1
