@@ -11,6 +11,8 @@ module Homebrew
     cask-install core-cask-install os-version
     homebrew-devcmdrun-developer homebrew-os-arch-ci
     homebrew-prefixes homebrew-versions
+    brew-command-run brew-command-run-options
+    brew-test-bot-test
   ].freeze
   DAYS = %w[30 90 365].freeze
   MAX_RETRIES = 3
