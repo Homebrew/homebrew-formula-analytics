@@ -67,8 +67,14 @@ module Homebrew
 
     Homebrew.install_bundler!
     REPO_ROOT.cd do
-      if !BUNDLER_SETUP.exist? || !quiet_system("bundle", "check", "--path", "vendor/ruby")
-        safe_system "bundle", "install", "--standalone", "--path", "vendor/ruby", out: :err
+      ENV["BUNDLE_PATH"] = "vendor/ruby"
+      if !BUNDLER_SETUP.exist? || !quiet_system("bundle", "check")
+        Process.wait(fork do
+          # Native build scripts fail if EUID != UID
+          Process::UID.change_privilege(Process.euid) if Process.euid != Process.uid
+          exec "bundle", "install", "--standalone", out: :err
+        end)
+        raise "Failed to install gems" unless $CHILD_STATUS.success?
       end
     end
 
@@ -85,6 +91,7 @@ module Homebrew
   def influx_analytics(args)
     require "utils/analytics"
     require "json"
+    require "arrow-flight-sql"
 
     token = if args.setup?
       Utils::Analytics::INFLUX_TOKEN
@@ -126,9 +133,6 @@ module Homebrew
     categories << :test_bot_test if args.brew_test_bot_test?
 
     category_matching_buckets = [:build_error, :cask_install, :command_run, :test_bot_test]
-
-    # TODO: we don't seem to get a valid count for these categories, unclear why.
-    count_being_weird_categories = [:command_run_options, :test_bot_test]
 
     categories.each do |category|
       additional_where = all_core_formulae_json ? " AND tap_name =~ /homebrew\\/(core|cask)/" : ""
@@ -176,16 +180,17 @@ module Homebrew
         groups = [:package, :tap_name, :options]
       end
 
+      call_options = ArrowFlight::CallOptions.new
+      call_options.add_header("authorization", "Bearer #{token}")
+      call_options.add_header("database", Utils::Analytics::INFLUX_BUCKET)
+      client = ArrowFlight::Client.new("grpc+tls://eu-central-1-1.aws.cloud2.influxdata.com:443")
+      sql_client = ArrowFlightSQL::Client.new(client)
+
       query = <<~EOS
-        SELECT COUNT(*) AS "count" FROM "#{bucket}" WHERE time >= now() - #{days_ago}d#{additional_where} GROUP BY #{groups.map { |e| "\"#{e}\"" }.join(",")}
+        SELECT #{groups.map { |e| "\"#{e}\"" }.join(",")}, COUNT(*) AS "count" FROM "#{bucket}" WHERE time >= now() - interval '#{days_ago} days'#{additional_where} GROUP BY #{groups.map { |e| "\"#{e}\"" }.join(",")}
       EOS
-      api_result_text = Utils.safe_popen_read(Utils::Curl.curl_executable, "--fail", "--silent",
-                                              "--get", "#{Utils::Analytics::INFLUX_HOST}/query",
-                                              "--header", "Authorization: Token #{token}",
-                                              "--header", "Accept: application/json",
-                                              "--data-urlencode", "db=#{Utils::Analytics::INFLUX_BUCKET}",
-                                              "--data-urlencode", "q=#{query}")
-      api_result = JSON.parse(api_result_text)
+      endpoints = sql_client.execute(query, call_options).endpoints
+      odie "No endpoints found" if endpoints.empty?
 
       json = {
         category:,
@@ -196,108 +201,82 @@ module Homebrew
         items:       [],
       }
 
-      odie "No data returned" unless api_result["results"].first.key? "series"
+      endpoints.each do |endpoint|
+        reader = sql_client.do_get(endpoint.ticket, call_options)
+        reader.each do |record_batch|
+          odie "Empty record batch" if record_batch.data.size.zero? # rubocop:disable Style/ZeroLengthPredicate
 
-      api_result["results"].first["series"].each do |result|
-        next unless result.key? "tags"
+          record_batch.data.each do |record|
+            dimension = case category
+            when :homebrew_devcmdrun_developer
+              "devcmdrun=#{record["devcmdrun"]} HOMEBREW_DEVELOPER=#{record["developer"]}"
+            when :homebrew_os_arch_ci
+              if record["ci"] == "true"
+                "#{record["os"]} #{record["arch"]} (CI)"
+              else
+                "#{record["os"]} #{record["arch"]}"
+              end
+            when :homebrew_prefixes
+              if record["prefix"] == "custom-prefix"
+                "#{record["prefix"]} (#{record["os"]} #{record["arch"]})"
+              else
+                (record["prefix"]).to_s
+              end
+            when :os_versions
+              format_os_version_dimension(record["os_name_and_version"])
+            when :command_run_options
+              "#{record["command"]} #{record["options"]}"
+            when :test_bot_test
+              command_and_package, options = record["command"].split.partition { |arg| !arg.start_with?("-") }
 
-        tags = result["tags"]
-        dimension = case category
-        when :homebrew_devcmdrun_developer
-          "devcmdrun=#{tags["devcmdrun"]} HOMEBREW_DEVELOPER=#{tags["developer"]}"
-        when :homebrew_os_arch_ci
-          if tags["ci"] == "true"
-            "#{tags["os"]} #{tags["arch"]} (CI)"
-          else
-            "#{tags["os"]} #{tags["arch"]}"
-          end
-        when :homebrew_prefixes
-          if tags["prefix"] == "custom-prefix"
-            "#{tags["prefix"]} (#{tags["os"]} #{tags["arch"]})"
-          else
-            (tags["prefix"]).to_s
-          end
-        when :os_versions
-          format_os_version_dimension(tags["os_name_and_version"])
-        when :command_run_options
-          "#{tags["command"]} #{tags["options"]}"
-        when :test_bot_test
-          command_and_package, options = tags["command"].split.partition { |arg| !arg.start_with?("-") }
+              # Cleanup bad data before https://github.com/Homebrew/homebrew-test-bot/pull/1043
+              # TODO: actually delete this from InfluxDB.
+              # Can delete this code after 27th April 2025.
+              next if %w[audit install linkage style test].exclude?(command_and_package.first)
+              next if command_and_package.last.include?("/")
+              next if options.include?("--tap=")
+              next if options.include?("--only-dependencies")
+              next if options.include?("--cached")
 
-          # Cleanup bad data before https://github.com/Homebrew/homebrew-test-bot/pull/1043
-          # TODO: actually delete this from InfluxDB.
-          # Can delete this code after 27th April 2025.
-          next if %w[audit install linkage style test].exclude?(command_and_package.first)
-          next if command_and_package.last.include?("/")
-          next if options.include?("--tap=")
-          next if options.include?("--only-dependencies")
-          next if options.include?("--cached")
+              command_and_options = (command_and_package + options.sort).join(" ")
+              passed = (record["passed"] == "true") ? "PASSED" : "FAILED"
 
-          command_and_options = (command_and_package + options.sort).join(" ")
-          passed = (tags["passed"] == "true") ? "PASSED" : "FAILED"
-
-          "#{command_and_options} (#{tags["os"]} #{tags["arch"]}) (#{passed})"
-        else
-          tags[groups.first.to_s]
-        end
-        next if dimension.blank?
-
-        if (tap_name = tags["tap_name"].presence) &&
-           ((tap_name != "homebrew/cask" && dimension_key == :cask) ||
-            (tap_name != "homebrew/core" && dimension_key == :formula))
-          dimension = "#{tap_name}/#{dimension}"
-        end
-
-        if (all_core_formulae_json || category == :build_error) &&
-           (options = tags["options"].presence)
-          # homebrew/core formulae don't have non-HEAD options but they ended up in our analytics anyway.
-          if all_core_formulae_json
-            options = options.split.include?("--HEAD") ? "--HEAD" : ""
-          end
-          dimension = "#{dimension} #{options}"
-        end
-
-        dimension = dimension.strip
-        next if dimension.match?(/[<>]/)
-
-        # we want any valid count that isn't the time field
-        count = nil
-        result["values"].first.compact.drop(1).find do |possible_count|
-          break if count.present?
-
-          count ||= begin
-            if possible_count.is_a?(Integer)
-              possible_count
-            elsif possible_count.is_a?(String)
-              Integer(possible_count, 10)
+              "#{command_and_options} (#{record["os"]} #{record["arch"]}) (#{passed})"
             else
-              Integer(possible_count)
+              record[groups.first.to_s]
             end
-          rescue ArgumentError, TypeError
-            nil
+            next if dimension.blank?
+
+            if (tap_name = record["tap_name"].presence) &&
+               ((tap_name != "homebrew/cask" && dimension_key == :cask) ||
+                 (tap_name != "homebrew/core" && dimension_key == :formula))
+              dimension = "#{tap_name}/#{dimension}"
+            end
+
+            if (all_core_formulae_json || category == :build_error) &&
+               (options = record["options"].presence)
+              # homebrew/core formulae don't have non-HEAD options but they ended up in our analytics anyway.
+              if all_core_formulae_json
+                options = options.split.include?("--HEAD") ? "--HEAD" : ""
+              end
+              dimension = "#{dimension} #{options}"
+            end
+
+            dimension = dimension.strip
+            next if dimension.match?(/[<>]/)
+
+            count = record["count"]
+
+            json[:total_items] += 1
+            json[:total_count] += count
+
+            json[:items] << {
+              number: nil,
+              dimension_key => dimension,
+              count:,
+            }
           end
-
-          next if count <= 0
-
-          count
         end
-
-        # TODO: we don't seem to get a valid count for these categories, unclear why.
-        count ||= 1 if count_being_weird_categories.include?(category)
-
-        odie "Invalid amount of items" if count.blank?
-
-        # Ignore values with a 0 count, means there are too few events to be useful.
-        next if count.zero?
-
-        json[:total_items] += 1
-        json[:total_count] += count
-
-        json[:items] << {
-          number: nil,
-          dimension_key => dimension,
-          count:,
-        }
       end
 
       # Combine identical values

@@ -2,4 +2,5 @@
 
 source "https://rubygems.org"
 
-gem "influxdb-client"
+gem "rake" # missing dependency for red-arrow-flight
+gem "red-arrow-flight-sql"
