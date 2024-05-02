@@ -287,6 +287,9 @@ module Homebrew
 
         odie "Invalid amount of items" if count.blank?
 
+        # Ignore values with a 0 count, means there are too few events to be useful.
+        next if count.zero?
+
         json[:total_items] += 1
         json[:total_count] += count
 
