@@ -67,7 +67,7 @@ module Homebrew
 
     safe_system HOMEBREW_BREW_FILE, "formula-analytics", "--setup"
 
-    directories = ["_data/analytics", "_data/analytics-linux", "api/analytics", "api/analytics-linux"]
+    directories = ["_data/analytics", "api/analytics"]
     FileUtils.rm_rf directories
     FileUtils.mkdir_p directories
 
