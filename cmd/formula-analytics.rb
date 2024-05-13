@@ -183,11 +183,17 @@ module Homebrew
       call_options = ArrowFlight::CallOptions.new
       call_options.add_header("authorization", "Bearer #{token}")
       call_options.add_header("database", Utils::Analytics::INFLUX_BUCKET)
-      client = ArrowFlight::Client.new("grpc+tls://eu-central-1-1.aws.cloud2.influxdata.com:443")
+      arrow_flight_host = "grpc+tls://#{INFLUX_HOST.delete_prefix("https://")}:443"
+      client = ArrowFlight::Client.new(arrow_flight_host)
       sql_client = ArrowFlightSQL::Client.new(client)
 
+      quoted_comma_groups = groups.map { |e| "\"#{e}\"" }.join(",")
       query = <<~EOS
-        SELECT #{groups.map { |e| "\"#{e}\"" }.join(",")}, COUNT(*) AS "count" FROM "#{bucket}" WHERE time >= now() - interval '#{days_ago} days'#{additional_where} GROUP BY #{groups.map { |e| "\"#{e}\"" }.join(",")}
+        SELECT #{quoted_comma_groups}, COUNT(*)
+        AS "count"
+        FROM "#{bucket}"
+        WHERE time >= now() - interval '#{days_ago} days'#{additional_where}
+        GROUP BY #{quoted_comma_groups}
       EOS
       endpoints = sql_client.execute(query, call_options).endpoints
       odie "No endpoints found" if endpoints.empty?
