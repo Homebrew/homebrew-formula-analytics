@@ -30,6 +30,8 @@ jobs:
 
     - run: brew test-bot --only-tap-syntax
 
+    - run: brew install apache-arrow-glib gobject-introspection
+
     - run: brew formula-analytics --setup
 
     - run: brew formula-analytics --install --json --days-ago=2
