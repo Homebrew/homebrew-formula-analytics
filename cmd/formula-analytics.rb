@@ -183,7 +183,7 @@ module Homebrew
       call_options = ArrowFlight::CallOptions.new
       call_options.add_header("authorization", "Bearer #{token}")
       call_options.add_header("database", Utils::Analytics::INFLUX_BUCKET)
-      arrow_flight_host = "grpc+tls://#{INFLUX_HOST.delete_prefix("https://")}:443"
+      arrow_flight_host = "grpc+tls://#{Utils::Analytics::INFLUX_HOST.delete_prefix("https://")}:443"
       client = ArrowFlight::Client.new(arrow_flight_host)
       sql_client = ArrowFlightSQL::Client.new(client)
 
