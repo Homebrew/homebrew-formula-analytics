@@ -18,7 +18,7 @@ jobs:
 
     - name: Cache Homebrew Bundler RubyGems
       id: cache
-      uses: actions/cache@v4.0.2
+      uses: actions/cache@v4
       with:
         path: ${{ steps.set-up-homebrew.outputs.gems-path }}
         key: ${{ runner.os }}-rubygems-${{ steps.set-up-homebrew.outputs.gems-hash }}
@@ -29,6 +29,8 @@ jobs:
       run: brew install-bundler-gems
 
     - run: brew test-bot --only-tap-syntax
+
+    - run: brew install apache-arrow-glib gobject-introspection
 
     - run: brew formula-analytics --setup
 
