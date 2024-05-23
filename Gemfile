@@ -2,4 +2,6 @@
 
 source "https://rubygems.org"
 
+ruby file: ".ruby-version"
+
 gem "influxdb-client"
