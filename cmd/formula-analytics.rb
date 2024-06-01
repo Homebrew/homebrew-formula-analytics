@@ -67,8 +67,10 @@ module Homebrew
 
     Homebrew.install_bundler!
     REPO_ROOT.cd do
-      if !BUNDLER_SETUP.exist? || !quiet_system("bundle", "check", "--path", "vendor/ruby")
-        safe_system "bundle", "install", "--standalone", "--path", "vendor/ruby", out: :err
+      with_env(BUNDLE_PATH: "vendor/ruby", BUNDLE_FROZEN: "true") do
+        if !BUNDLER_SETUP.exist? || !quiet_system("bundle", "check")
+          safe_system "bundle", "install", "--standalone", out: :err
+        end
       end
     end
 
