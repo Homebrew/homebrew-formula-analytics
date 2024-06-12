@@ -382,6 +382,7 @@ module Homebrew
         when /^12\.?/ then "macOS Monterey (12)"
         when /^13\.?/ then "macOS Ventura (13)"
         when /^14\.?/ then "macOS Sonoma (14)"
+        when /^15\.?/ then "macOS Sequoia (15)"
         when /Ubuntu(-Server)? (14|16|18|20|22)\.04/ then "Ubuntu #{Regexp.last_match(2)}.04 LTS"
         when /Ubuntu(-Server)? (\d+\.\d+).\d ?(LTS)?/
           "Ubuntu #{Regexp.last_match(2)} #{Regexp.last_match(3)}".strip
