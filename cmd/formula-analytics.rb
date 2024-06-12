@@ -383,7 +383,8 @@ module Homebrew
         when /^13\.?/ then "macOS Ventura (13)"
         when /^14\.?/ then "macOS Sonoma (14)"
         when /Ubuntu(-Server)? (14|16|18|20|22)\.04/ then "Ubuntu #{Regexp.last_match(2)}.04 LTS"
-        when /Ubuntu(-Server)? (\d+\.\d+).\d ?(LTS)?/ then "Ubuntu #{Regexp.last_match(2)} #{Regexp.last_match(3)}".strip
+        when /Ubuntu(-Server)? (\d+\.\d+).\d ?(LTS)?/
+          "Ubuntu #{Regexp.last_match(2)} #{Regexp.last_match(3)}".strip
         when %r{Debian GNU/Linux (\d+)\.\d+} then "Debian #{Regexp.last_match(1)} #{Regexp.last_match(2)}"
         when /CentOS (\w+) (\d+)/ then "CentOS #{Regexp.last_match(1)} #{Regexp.last_match(2)}"
         when /Fedora Linux (\d+)[.\d]*/ then "Fedora Linux #{Regexp.last_match(1)}"
