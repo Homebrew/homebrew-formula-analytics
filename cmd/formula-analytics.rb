@@ -389,7 +389,7 @@ module Homebrew
         when %r{Debian GNU/Linux (\d+)\.\d+} then "Debian #{Regexp.last_match(1)} #{Regexp.last_match(2)}"
         when /CentOS (\w+) (\d+)/ then "CentOS #{Regexp.last_match(1)} #{Regexp.last_match(2)}"
         when /Fedora Linux (\d+)[.\d]*/ then "Fedora Linux #{Regexp.last_match(1)}"
-        when /KDE neon .*([\d.]+)/ then "KDE neon #{Regexp.last_match(1)}"
+        when /KDE neon .*?([\d.]+)/ then "KDE neon #{Regexp.last_match(1)}"
         else dimension
         end
       end
