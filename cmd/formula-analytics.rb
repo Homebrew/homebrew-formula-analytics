@@ -52,15 +52,20 @@ module Homebrew
         named_args :none
       end
 
-      REPO_ROOT = Pathname.new("#{File.dirname(__FILE__)}/..").freeze
-      VENDOR_RUBY = "#{REPO_ROOT}/vendor/ruby".freeze
-      BUNDLER_SETUP = Pathname.new("#{VENDOR_RUBY}/bundler/setup.rb").freeze
+      REPO_ROOT = Pathname.new("#{File.dirname(__FILE__)}/..").expand_path.freeze
+      VENDOR_RUBY = (REPO_ROOT/"vendor/ruby").freeze
+      VENDOR_PYTHON = (REPO_ROOT/"vendor/python").freeze
+      BUNDLER_SETUP = (VENDOR_RUBY/"bundler/setup.rb").freeze
+      PYTHON_VERSION = (REPO_ROOT/".python-version").read.chomp.freeze
       FIRST_INFLUXDB_ANALYTICS_DATE = Date.new(2023, 03, 27).freeze
 
       def run
-        # Configure RubyGems.
-        require "rubygems"
+        setup_ruby
+        setup_python
+        influx_analytics(args)
+      end
 
+      def setup_ruby
         Homebrew.install_bundler!
         REPO_ROOT.cd do
           with_env(BUNDLE_PATH: "vendor/ruby", BUNDLE_FROZEN: "true") do
@@ -70,31 +75,56 @@ module Homebrew
           end
         end
 
-        require "rbconfig"
-        ENV["GEM_HOME"] = ENV["GEM_PATH"] = "#{VENDOR_RUBY}/#{RUBY_ENGINE}/#{RbConfig::CONFIG["ruby_version"]}"
-        Gem.clear_paths
-        Gem::Specification.reset
-
         require_relative BUNDLER_SETUP
+      end
 
-        influx_analytics(args)
+      def setup_python
+        odie <<~EOS if which("python#{PYTHON_VERSION}").nil?
+          Python #{PYTHON_VERSION} is required. Try:
+            brew install python@#{PYTHON_VERSION}
+        EOS
+
+        venv_root = VENDOR_PYTHON/PYTHON_VERSION
+        VENDOR_PYTHON.children.reject { |path| path == venv_root }.each(&:rmtree) if VENDOR_PYTHON.exist?
+        venv_python = venv_root/"bin/python"
+
+        repo_requirements = REPO_ROOT/"requirements.txt"
+        venv_requirements = venv_root/"requirements.txt"
+        if !venv_requirements.exist? || !FileUtils.identical?(repo_requirements, venv_requirements)
+          safe_system "python#{PYTHON_VERSION}", "-I", "-m", "venv", "--clear", venv_root, out: :err
+          safe_system venv_python, "-m", "pip", "install",
+                      "--disable-pip-version-check",
+                      "--require-hashes",
+                      "--requirement", repo_requirements,
+                      out: :err
+          FileUtils.cp repo_requirements, venv_requirements
+        end
+
+        ENV["PATH"] = "#{venv_root}/bin:#{ENV.fetch("PATH")}"
+        ENV["__PYVENV_LAUNCHER__"] = venv_python # support macOS framework Pythons
+
+        require "pycall"
+        PyCall.init(venv_python)
+        require_relative "../lib/pycall-setup"
       end
 
       def influx_analytics(args)
         require "utils/analytics"
         require "json"
 
-        token = if args.setup?
-          Utils::Analytics::INFLUX_TOKEN
-        else
-          ENV.fetch("HOMEBREW_INFLUXDB_TOKEN", nil)
-        end
-
         return if args.setup?
 
         odie "HOMEBREW_NO_ANALYTICS is set!" if ENV["HOMEBREW_NO_ANALYTICS"]
 
-        odie "No InfluxDB credentials found in HOMEBREW_INFLUXDB_TOKEN!" unless ENV["HOMEBREW_INFLUXDB_TOKEN"]
+        token = ENV.fetch("HOMEBREW_INFLUXDB_TOKEN", nil)
+        odie "No InfluxDB credentials found in HOMEBREW_INFLUXDB_TOKEN!" unless token
+
+        client = InfluxDBClient3.new(
+          token:,
+          host:     URI.parse(Utils::Analytics::INFLUX_HOST).host,
+          org:      Utils::Analytics::INFLUX_ORG,
+          database: Utils::Analytics::INFLUX_BUCKET,
+        )
 
         max_days_ago = (Date.today - FIRST_INFLUXDB_ANALYTICS_DATE).to_i
         days_ago = (args.days_ago || 30).to_i
@@ -125,11 +155,8 @@ module Homebrew
 
         category_matching_buckets = [:build_error, :cask_install, :command_run, :test_bot_test]
 
-        # TODO: we don't seem to get a valid count for these categories, unclear why.
-        count_being_weird_categories = [:command_run_options, :test_bot_test]
-
         categories.each do |category|
-          additional_where = all_core_formulae_json ? " AND tap_name =~ /homebrew\\/(core|cask)/" : ""
+          additional_where = all_core_formulae_json ? " AND tap_name ~ '^homebrew/(core|cask)$'" : ""
           bucket = if category_matching_buckets.include?(category)
             category
           elsif category == :command_run_options
@@ -164,26 +191,20 @@ module Homebrew
           when :test_bot_test
             dimension_key = "test_bot_test"
             groups = [:command, :passed, :arch, :os]
+          when :cask_install
+            dimension_key = :cask
+            groups = [:package, :tap_name]
           else
-            dimension_key = if category == :cask_install
-              :cask
-            else
-              :formula
-            end
+            dimension_key = :formula
             additional_where += " AND on_request = 'true'" if category == :formula_install_on_request
             groups = [:package, :tap_name, :options]
           end
 
+          sql_groups = groups.map { |e| "\"#{e}\"" }.join(",")
           query = <<~EOS
-            SELECT COUNT(*) AS "count" FROM "#{bucket}" WHERE time >= now() - #{days_ago}d#{additional_where} GROUP BY #{groups.map { |e| "\"#{e}\"" }.join(",")}
+            SELECT #{sql_groups}, COUNT(*) AS "count" FROM "#{bucket}" WHERE time >= now() - INTERVAL '#{days_ago} day'#{additional_where} GROUP BY #{sql_groups}
           EOS
-          api_result_text = Utils.safe_popen_read(Utils::Curl.curl_executable, "--fail", "--silent",
-                                                  "--get", "#{Utils::Analytics::INFLUX_HOST}/query",
-                                                  "--header", "Authorization: Token #{token}",
-                                                  "--header", "Accept: application/json",
-                                                  "--data-urlencode", "db=#{Utils::Analytics::INFLUX_BUCKET}",
-                                                  "--data-urlencode", "q=#{query}")
-          api_result = JSON.parse(api_result_text)
+          batches = client.query(query:, language: "sql").to_batches
 
           json = {
             category:,
@@ -194,109 +215,80 @@ module Homebrew
             items:       [],
           }
 
-          odie "No data returned" unless api_result["results"].first.key? "series"
-
-          api_result["results"].first["series"].each do |result|
-            next unless result.key? "tags"
-
-            tags = result["tags"]
-            dimension = case category
-            when :homebrew_devcmdrun_developer
-              "devcmdrun=#{tags["devcmdrun"]} HOMEBREW_DEVELOPER=#{tags["developer"]}"
-            when :homebrew_os_arch_ci
-              if tags["ci"] == "true"
-                "#{tags["os"]} #{tags["arch"]} (CI)"
-              else
-                "#{tags["os"]} #{tags["arch"]}"
-              end
-            when :homebrew_prefixes
-              if tags["prefix"] == "custom-prefix"
-                "#{tags["prefix"]} (#{tags["os"]} #{tags["arch"]})"
-              else
-                (tags["prefix"]).to_s
-              end
-            when :os_versions
-              format_os_version_dimension(tags["os_name_and_version"])
-            when :command_run_options
-              "#{tags["command"]} #{tags["options"]}"
-            when :test_bot_test
-              command_and_package, options = tags["command"].split.partition { |arg| !arg.start_with?("-") }
-
-              # Cleanup bad data before https://github.com/Homebrew/homebrew-test-bot/pull/1043
-              # TODO: actually delete this from InfluxDB.
-              # Can delete this code after 27th April 2025.
-              next if %w[audit install linkage style test].exclude?(command_and_package.first)
-              next if command_and_package.last.include?("/")
-              next if options.include?("--tap=")
-              next if options.include?("--only-dependencies")
-              next if options.include?("--cached")
-
-              command_and_options = (command_and_package + options.sort).join(" ")
-              passed = (tags["passed"] == "true") ? "PASSED" : "FAILED"
-
-              "#{command_and_options} (#{tags["os"]} #{tags["arch"]}) (#{passed})"
-            else
-              tags[groups.first.to_s]
-            end
-            next if dimension.blank?
-
-            if (tap_name = tags["tap_name"].presence) &&
-               ((tap_name != "homebrew/cask" && dimension_key == :cask) ||
-                 (tap_name != "homebrew/core" && dimension_key == :formula))
-              dimension = "#{tap_name}/#{dimension}"
-            end
-
-            if (all_core_formulae_json || category == :build_error) &&
-               (options = tags["options"].presence)
-              # homebrew/core formulae don't have non-HEAD options but they ended up in our analytics anyway.
-              if all_core_formulae_json
-                options = options.split.include?("--HEAD") ? "--HEAD" : ""
-              end
-              dimension = "#{dimension} #{options}"
-            end
-
-            dimension = dimension.strip
-            next if dimension.match?(/[<>]/)
-
-            # we want any valid count that isn't the time field
-            count = nil
-            result["values"].first.compact.drop(1).find do |possible_count|
-              break if count.present?
-
-              count ||= begin
-                if possible_count.is_a?(Integer)
-                  possible_count
-                elsif possible_count.is_a?(String)
-                  Integer(possible_count, 10)
+          batches.each do |batch|
+            batch.to_pylist.each do |record|
+              dimension = case category
+              when :homebrew_devcmdrun_developer
+                "devcmdrun=#{record["devcmdrun"]} HOMEBREW_DEVELOPER=#{record["developer"]}"
+              when :homebrew_os_arch_ci
+                if record["ci"] == "true"
+                  "#{record["os"]} #{record["arch"]} (CI)"
                 else
-                  Integer(possible_count)
+                  "#{record["os"]} #{record["arch"]}"
                 end
-              rescue ArgumentError, TypeError
-                nil
+              when :homebrew_prefixes
+                if record["prefix"] == "custom-prefix"
+                  "#{record["prefix"]} (#{record["os"]} #{record["arch"]})"
+                else
+                  (record["prefix"]).to_s
+                end
+              when :os_versions
+                format_os_version_dimension(record["os_name_and_version"])
+              when :command_run_options
+                "#{record["command"]} #{record["options"]}"
+              when :test_bot_test
+                command_and_package, options = record["command"].split.partition { |arg| !arg.start_with?("-") }
+
+                # Cleanup bad data before https://github.com/Homebrew/homebrew-test-bot/pull/1043
+                # TODO: actually delete this from InfluxDB.
+                # Can delete this code after 27th April 2025.
+                next if %w[audit install linkage style test].exclude?(command_and_package.first)
+                next if command_and_package.last.include?("/")
+                next if options.include?("--tap=")
+                next if options.include?("--only-dependencies")
+                next if options.include?("--cached")
+
+                command_and_options = (command_and_package + options.sort).join(" ")
+                passed = (record["passed"] == "true") ? "PASSED" : "FAILED"
+
+                "#{command_and_options} (#{record["os"]} #{record["arch"]}) (#{passed})"
+              else
+                record[groups.first.to_s]
+              end
+              next if dimension.blank?
+
+              if (tap_name = record["tap_name"].presence) &&
+                 ((tap_name != "homebrew/cask" && dimension_key == :cask) ||
+                  (tap_name != "homebrew/core" && dimension_key == :formula))
+                dimension = "#{tap_name}/#{dimension}"
               end
 
-              next if count <= 0
+              if (all_core_formulae_json || category == :build_error) &&
+                 (options = record["options"].presence)
+                # homebrew/core formulae don't have non-HEAD options but they ended up in our analytics anyway.
+                if all_core_formulae_json
+                  options = options.split.include?("--HEAD") ? "--HEAD" : ""
+                end
+                dimension = "#{dimension} #{options}"
+              end
 
-              count
+              dimension = dimension.strip
+              next if dimension.match?(/[<>]/)
+
+              count = record["count"]
+
+              json[:total_items] += 1
+              json[:total_count] += count
+
+              json[:items] << {
+                number: nil,
+                dimension_key => dimension,
+                count:,
+              }
             end
-
-            # TODO: we don't seem to get a valid count for these categories, unclear why.
-            count ||= 1 if count_being_weird_categories.include?(category)
-
-            odie "Invalid amount of items" if count.blank?
-
-            # Ignore values with a 0 count, means there are too few events to be useful.
-            next if count.zero?
-
-            json[:total_items] += 1
-            json[:total_count] += count
-
-            json[:items] << {
-              number: nil,
-              dimension_key => dimension,
-              count:,
-            }
           end
+
+          odie "No data returned" if json[:total_count].zero?
 
           # Combine identical values
           deduped_items = {}
