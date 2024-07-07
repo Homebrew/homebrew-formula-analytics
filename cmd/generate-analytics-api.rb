@@ -19,15 +19,13 @@ module Homebrew
       MAX_RETRIES = 3
 
       cmd_args do
-        Homebrew::CLI::Parser.new do
-          description <<~EOS
-            Generates analytics API data files for formulae.brew.sh.
+        description <<~EOS
+          Generates analytics API data files for formulae.brew.sh.
 
-            The generated files are written to the current directory.
-          EOS
+          The generated files are written to the current directory.
+        EOS
 
-          named_args :none
-        end
+        named_args :none
       end
 
       def analytics_json_template(category_name, data_source: nil)
