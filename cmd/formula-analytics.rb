@@ -204,7 +204,14 @@ module Homebrew
           query = <<~EOS
             SELECT #{sql_groups}, COUNT(*) AS "count" FROM "#{bucket}" WHERE time >= now() - INTERVAL '#{days_ago} day'#{additional_where} GROUP BY #{sql_groups}
           EOS
-          batches = client.query(query:, language: "sql").to_batches
+          batches = begin
+            client.query(query:, language: "sql").to_batches
+          rescue PyCall::PyError => e
+            if e.message.include?("message: unauthenticated")
+              odie "Could not authenticate with InfluxDB! Please check your HOMEBREW_INFLUXDB_TOKEN!"
+            end
+            raise
+          end
 
           json = {
             category:,
@@ -235,12 +242,17 @@ module Homebrew
               when :os_versions
                 format_os_version_dimension(record["os_name_and_version"])
               when :command_run_options
-                "#{record["command"]} #{record["options"]}"
+                options = record["options"].split
+
+                # Cleanup bad data before TODO
+                # Can delete this code after 16th July 2025.
+                options.reject! { |option| option.match(/^--with(out)?-/) }
+
+                "#{record["command"]} #{options.sort.join(" ")}"
               when :test_bot_test
                 command_and_package, options = record["command"].split.partition { |arg| !arg.start_with?("-") }
 
                 # Cleanup bad data before https://github.com/Homebrew/homebrew-test-bot/pull/1043
-                # TODO: actually delete this from InfluxDB.
                 # Can delete this code after 27th April 2025.
                 next if %w[audit install linkage style test].exclude?(command_and_package.first)
                 next if command_and_package.last.include?("/")

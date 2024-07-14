@@ -11,7 +11,7 @@ module Homebrew
         cask-install core-cask-install os-version
         homebrew-devcmdrun-developer homebrew-os-arch-ci
         homebrew-prefixes homebrew-versions
-        brew-command-run
+        brew-command-run brew-command-run-options brew-test-bot-test
       ].freeze
 
       # TODO: add brew-command-run-options brew-test-bot-test to above when working.
