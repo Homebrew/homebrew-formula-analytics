@@ -245,8 +245,9 @@ module Homebrew
                 options = record["options"].split
 
                 # Cleanup bad data before TODO
-                # Can delete this code after 16th July 2025.
-                options.reject! { |option| option.match(/^--with(out)?-/) }
+                # Can delete this code after 18th July 2025.
+                options.reject! { |option| option.match?(/^--with(out)?-/) }
+                options.reject! { |option| option.match?(/^TMPDIR=/) }
 
                 "#{record["command"]} #{options.sort.join(" ")}"
               when :test_bot_test
