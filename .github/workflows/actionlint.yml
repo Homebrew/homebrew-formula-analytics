@@ -31,6 +31,8 @@ jobs:
   workflow_syntax:
     if: github.repository_owner == 'Homebrew'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Set up Homebrew
         id: setup-homebrew
