@@ -47,7 +47,7 @@ jobs:
 
       - uses: actions/checkout@v4
         with:
-          persist-credentials: ${{ github.event.repository.private }}
+          persist-credentials: false
 
       - run: zizmor --format sarif . >results.sarif
 
