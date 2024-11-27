@@ -8,9 +8,9 @@ certifi==2024.8.30 \
     --hash=sha256:922820b53db7a7257ffbda3f597266d435245903d80737e34f8a45ff3e3230d8 \
     --hash=sha256:bec941d2aa8195e248a60b31ff9f0558284cf01a52591ceda73ea9afffd69fd9
     # via influxdb3-python
-influxdb3-python==0.9.0 \
-    --hash=sha256:10dc9c80eccc49b3dc3f2048ada7e26b23539f27efd5c98c0e69b784ffeb7b5e \
-    --hash=sha256:f64f36ada948c9953bd99f5ce42c1de3db2a4db6f84837899f34a8c05f17a44f
+influxdb3-python==0.10.0 \
+    --hash=sha256:d279e5f8a597d49b44035263b1cf1472a3861ceba930fd08e1e3b1721a07d3cf \
+    --hash=sha256:f3d44dff4c4bbfdcb1fa1c4013ccfa317fbbd7df5812eb46395421166ffb385a
     # via -r requirements.in
 pyarrow==18.1.0 \
     --hash=sha256:01c034b576ce0eef554f7c3d8c341714954be9b3f5d5bc7117006b85fcf302fe \
