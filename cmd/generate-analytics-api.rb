@@ -1,3 +1,4 @@
+# typed: strict
 # frozen_string_literal: true
 
 require "abstract_command"
@@ -28,6 +29,7 @@ module Homebrew
         named_args :none
       end
 
+      sig { params(category_name: String, data_source: T.nilable(String)).returns(String) }
       def analytics_json_template(category_name, data_source: nil)
         data_source = "#{data_source}: true" if data_source
 
@@ -41,6 +43,7 @@ module Homebrew
         EOS
       end
 
+      sig { params(args: String).returns(String) }
       def run_formula_analytics(*args)
         puts "brew formula-analytics #{args.join(" ")}"
 
@@ -61,6 +64,7 @@ module Homebrew
         result
       end
 
+      sig { override.void }
       def run
         safe_system HOMEBREW_BREW_FILE, "formula-analytics", "--setup"
 
