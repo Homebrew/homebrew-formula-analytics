@@ -1,3 +1,4 @@
+# typed: strict
 # frozen_string_literal: true
 
 require "abstract_command"
@@ -52,19 +53,21 @@ module Homebrew
         named_args :none
       end
 
-      REPO_ROOT = Pathname.new("#{File.dirname(__FILE__)}/..").expand_path.freeze
-      VENDOR_RUBY = (REPO_ROOT/"vendor/ruby").freeze
-      VENDOR_PYTHON = (REPO_ROOT/"vendor/python").freeze
-      BUNDLER_SETUP = (VENDOR_RUBY/"bundler/setup.rb").freeze
-      PYTHON_VERSION = (REPO_ROOT/".python-version").read.chomp.freeze
-      FIRST_INFLUXDB_ANALYTICS_DATE = Date.new(2023, 03, 27).freeze
+      REPO_ROOT = T.let(Pathname.new("#{File.dirname(__FILE__)}/..").expand_path.freeze, Pathname)
+      VENDOR_RUBY = T.let((REPO_ROOT/"vendor/ruby").freeze, Pathname)
+      VENDOR_PYTHON = T.let((REPO_ROOT/"vendor/python").freeze, Pathname)
+      BUNDLER_SETUP = T.let((VENDOR_RUBY/"bundler/setup.rb").freeze, Pathname)
+      PYTHON_VERSION = T.let((REPO_ROOT/".python-version").read.chomp.freeze, String)
+      FIRST_INFLUXDB_ANALYTICS_DATE = T.let(Date.new(2023, 03, 27).freeze, Date)
 
+      sig { override.void }
       def run
         setup_ruby
         setup_python
         influx_analytics(args)
       end
 
+      sig { void }
       def setup_ruby
         Homebrew.install_bundler!
         REPO_ROOT.cd do
@@ -78,6 +81,7 @@ module Homebrew
         require_relative BUNDLER_SETUP
       end
 
+      sig { void }
       def setup_python
         odie <<~EOS if which("python#{PYTHON_VERSION}").nil?
           Python #{PYTHON_VERSION} is required. Try:
@@ -101,13 +105,14 @@ module Homebrew
         end
 
         ENV["PATH"] = "#{venv_root}/bin:#{ENV.fetch("PATH")}"
-        ENV["__PYVENV_LAUNCHER__"] = venv_python # support macOS framework Pythons
+        ENV["__PYVENV_LAUNCHER__"] = venv_python.to_s # support macOS framework Pythons
 
         require "pycall"
         PyCall.init(venv_python)
         require_relative "../lib/pycall-setup"
       end
 
+      sig { params(args: Homebrew::Cmd::FormulaAnalyticsCmd::Args).void }
       def influx_analytics(args)
         require "utils/analytics"
         require "json"
@@ -126,7 +131,7 @@ module Homebrew
           database: Utils::Analytics::INFLUX_BUCKET,
         )
 
-        max_days_ago = (Date.today - FIRST_INFLUXDB_ANALYTICS_DATE).to_i
+        max_days_ago = (Date.today - FIRST_INFLUXDB_ANALYTICS_DATE).to_s.to_i
         days_ago = (args.days_ago || 30).to_i
         if days_ago > max_days_ago
           opoo "Analytics started #{FIRST_INFLUXDB_ANALYTICS_DATE}. `--days-ago` set to maximum value."
@@ -213,14 +218,14 @@ module Homebrew
             raise
           end
 
-          json = {
+          json = T.let({
             category:,
             total_items: 0,
             start_date:  Date.today - days_ago.to_i,
             end_date:    Date.today,
             total_count: 0,
             items:       [],
-          }
+          }, T::Hash[Symbol, T.untyped])
 
           batches.each do |batch|
             batch.to_pylist.each do |record|
@@ -356,14 +361,17 @@ module Homebrew
         end
       end
 
+      sig { params(count: Integer).returns(String) }
       def format_count(count)
         count.to_s.reverse.gsub(/(\d{3})(?=\d)/, '\\1,').reverse
       end
 
+      sig { params(percent: Float).returns(String) }
       def format_percent(percent)
         format("%<percent>.2f", percent:).gsub(/\.00$/, "")
       end
 
+      sig { params(dimension: String).returns(T.nilable(String)) }
       def format_os_version_dimension(dimension)
         return if dimension.blank?
 
