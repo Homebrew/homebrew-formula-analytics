@@ -1,6 +1,10 @@
 # typed: true
 
-module InfluxDBClient3; end
+class InfluxDBClient3
+  def self.initialize(*args); end
+
+  def query(*args); end
+end
 
 module PyCall
   def self.init(*args); end
@@ -11,5 +15,5 @@ module PyCall
     def self.import(*args); end
   end
 
-  class PyError; end # rubocop:disable Lint/EmptyClass
+  PyError = Class.new(StandardError).freeze
 end
