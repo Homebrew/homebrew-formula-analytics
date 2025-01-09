@@ -371,7 +371,7 @@ module Homebrew
         format("%<percent>.2f", percent:).gsub(/\.00$/, "")
       end
 
-      sig { params(dimension: String).returns(T.nilable(String)) }
+      sig { params(dimension: T.nilable(String)).returns(T.nilable(String)) }
       def format_os_version_dimension(dimension)
         return if dimension.blank?
 
