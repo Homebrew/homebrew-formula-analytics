@@ -379,13 +379,6 @@ module Homebrew
                              .gsub(/^macOS ?/, "")
                              .gsub(/ \(.+\)$/, "")
         case dimension
-        when "10.4" then "Mac OS X Tiger (10.4)"
-        when "10.5" then "Mac OS X Leopard (10.5)"
-        when "10.6" then "Mac OS X Snow Leopard (10.6)"
-        when "10.7" then "Mac OS X Lion (10.7)"
-        when "10.8" then "OS X Mountain Lion (10.8)"
-        when "10.9" then "OS X Mavericks (10.9)"
-        when "10.10" then "OS X Yosemite (10.10)"
         when "10.11", /^10\.11\.?/ then "OS X El Capitan (10.11)"
         when "10.12", /^10\.12\.?/ then "macOS Sierra (10.12)"
         when "10.13", /^10\.13\.?/ then "macOS High Sierra (10.13)"
@@ -403,6 +396,7 @@ module Homebrew
         when /CentOS (\w+) (\d+)/ then "CentOS #{Regexp.last_match(1)} #{Regexp.last_match(2)}"
         when /Fedora Linux (\d+)[.\d]*/ then "Fedora Linux #{Regexp.last_match(1)}"
         when /KDE neon .*?([\d.]+)/ then "KDE neon #{Regexp.last_match(1)}"
+        when /Amazon Linux (\d+)\.[.\d]*/ then "Amazon Linux #{Regexp.last_match(1)}"
         else dimension
         end
       end
